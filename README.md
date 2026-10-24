@@ -54,6 +54,7 @@ pnpm check        # lint, tipos, regras, testes com cobertura, testes do simulad
 
 ## Documentação
 
+- [Guia de uso: criar alertas e ligá-los ao Datadog](docs/guia-de-uso.md)
 - [Produto e escopo](PRODUCT.md)
 - [Integração com o Datadog](docs/integrations/datadog.md)
 - [Preparação local](docs/onboarding.md)
