@@ -29,8 +29,8 @@ async function upsertApplication(tx: Tx, name: string) {
  * Aplica um evento normalizado. Idempotente por (provider, externalEventId) e serializado por
  * alerta (SELECT ... FOR UPDATE), então entregas repetidas ou concorrentes não duplicam transições.
  */
-export async function ingestEvent(db: Db, event: NormalizedEvent): Promise<IngestResult> {
-  const actor = `system:${event.provider}`;
+export async function ingestEvent(db: Db, event: NormalizedEvent, options: { actor?: string } = {}): Promise<IngestResult> {
+  const actor = options.actor ?? `system:${event.provider}`;
   return db.transaction(async (tx) => {
     // 1. Registro do evento: o conflito é a checagem de idempotência.
     const [stored] = await tx

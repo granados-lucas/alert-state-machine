@@ -4,13 +4,14 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { BellIcon, FlowIcon, LayersIcon, MapIcon, PlusIcon } from "./icons";
+import { BellIcon, FlowIcon, LayersIcon, MapIcon, PlusIcon, SyncIcon } from "./icons";
 
 const nav = [
   { href: "/", label: "Mapa de jornadas", icon: MapIcon },
   { href: "/alerts", label: "Alertas", icon: BellIcon },
   { href: "/alerts/new", label: "Novo alerta", icon: PlusIcon },
   { href: "/journeys/new", label: "Nova jornada", icon: LayersIcon },
+  { href: "/reconciliation", label: "Reconciliação", icon: SyncIcon },
   { href: "/graph", label: "Máquina de estados", icon: FlowIcon },
 ];
 

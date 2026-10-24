@@ -137,3 +137,15 @@ A pedido do solicitante, as ligações entre aplicações foram removidas e o ma
 ## Fase 6 — token de administração removido (2026-10-24)
 
 A pedido do solicitante: o `ADMIN_API_TOKEN` saiu (API, formulários, simulador, compose, testes). A aplicação passa a confiar no SSO corporativo que ficará na frente e lê a identidade em `AUTH_USER_HEADER` (padrão `x-forwarded-email`). Ver `docs/architecture.md` ("Identidade e autorização") para o que o deploy precisa garantir. Evidência: ver a seção de verificação abaixo.
+
+## Fase 7 — equivalência de estados e reconciliação (2026-10-24)
+
+| Item | Estado | Evidência |
+|---|---|---|
+| Equivalência de estados (`providers/datadog/states.ts`) | Validada por testes; **semântica de Unknown/Skipped/Ignored não verificada** | Teste garante cobertura do enum documentado; decisão de produto registrada em `docs/integrations/datadog.md` |
+| Estudo dos limites da API | Lido (Get all monitors, Rate Limits) | A documentação **não publica números por endpoint**; usamos os cabeçalhos `X-RateLimit-*` |
+| Migrações 0005 e 0006 | Validadas em PostgreSQL 17 real **sobre dados existentes** | 200 alertas preservados ao subir a stack |
+| `pnpm check` | Validado | 182 testes (cobertura 97,4% stmts, 94,3% branches, 97,7% funções, 97,9% linhas), 14 do simulador, 5 do script |
+| Simulador ponta a ponta | Validado | 0 divergências; reconciliação: 8 corrigidos, 3 criados, 2 mantidos, 1 ausente, 1×429 absorvido, nova execução idempotente |
+| Script `scripts/reconcile.mjs` | Executado contra a stack Docker | simulação e execução real: 200 monitores em 5 páginas, 0 divergências; saída 0 |
+| Chamada ao Datadog **real** | **Não executada** | Sem chaves/conta de teste |

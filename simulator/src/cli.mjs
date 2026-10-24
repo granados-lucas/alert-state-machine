@@ -6,6 +6,7 @@ import { createModel } from "./model.mjs";
 import { createFakeDatadog } from "./fake-datadog.mjs";
 import { startReceiver } from "./receiver.mjs";
 import { createRng } from "./rng.mjs";
+import { reconcileScenario } from "./reconcile-scenario.mjs";
 import { CALM_WEIGHTS, churn, createJourneys, healthRound, muteScenario, seed, verify } from "./scenario.mjs";
 
 const { positionals, values } = parseArgs({
@@ -47,7 +48,7 @@ const client = createClient({
   webhookSecret: required("DATADOG_WEBHOOK_SECRET"),
 });
 const model = createModel(catalog.monitors);
-const fake = createFakeDatadog({ apiKey: required("DD_API_KEY"), appKey: required("DD_APP_KEY"), getTruth: (id) => model.get(id)?.truth });
+const fake = createFakeDatadog({ apiKey: required("DD_API_KEY"), appKey: required("DD_APP_KEY"), getTruth: (id) => model.get(id)?.truth, monitors: () => catalog.monitors });
 const receiver = await startReceiver({ port: Number(values["receiver-port"]), token: required("SIMULATOR_REMEDIATION_TOKEN"), extraHandler: fake.handle });
 log(`catalog: ${catalog.applications.length} applications, ${catalog.monitors.length} monitors; receiver on :${receiver.port}`);
 await client.waitHealthy();
@@ -91,7 +92,9 @@ if (command === "stream") {
 problems.push(...(await churn({ client, catalog, model, events: Number(values.events), seed: Number(values.seed), log, workers: Number(values.workers ?? 12) })));
 const muting = await muteScenario({ client, catalog, model, fake, log });
 problems.push(...muting.problems);
-problems.push(...(await verify({ client, catalog, model, receiver, log, appLevel: !hadData, stillMuted: muting.stillMuted })));
+const reconciling = await reconcileScenario({ client, catalog, model, fake, log, strict: !hadData });
+problems.push(...reconciling.problems);
+problems.push(...(await verify({ client, catalog, model, receiver, log, appLevel: !hadData, stillMuted: muting.stillMuted, extraUnassigned: reconciling.ghostApplications })));
 await receiver.close();
 
 if (problems.length) {

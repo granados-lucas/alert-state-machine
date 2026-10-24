@@ -123,7 +123,7 @@ export async function churn({ client, catalog, model, events, seed: seedValue, l
 }
 
 /** Compara o estado final da aplicação principal com o oráculo. */
-export async function verify({ client, catalog, model, receiver, log, appLevel, stillMuted = [] }) {
+export async function verify({ client, catalog, model, receiver, log, appLevel, stillMuted = [], extraUnassigned = [] }) {
   const problems = [];
 
   const alerts = await client.listAllAlerts();
@@ -170,7 +170,7 @@ export async function verify({ client, catalog, model, receiver, log, appLevel, 
       if (members !== [...journey.applications].sort().join()) problems.push(`journey ${journey.name}: applications differ`);
     }
     const covered = new Set(catalog.journeys.flatMap((j) => j.applications));
-    const wantUnassigned = catalog.applications.filter((a) => !covered.has(a)).sort().join();
+    const wantUnassigned = [...catalog.applications.filter((a) => !covered.has(a)), ...extraUnassigned].sort().join();
     if (map.unassigned.map((a) => a.name).sort().join() !== wantUnassigned) problems.push("applications without journey differ");
     log(`checked ${catalog.applications.length} application statuses and ${catalog.journeys.length} journeys`);
   } else {

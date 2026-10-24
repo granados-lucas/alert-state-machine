@@ -33,6 +33,9 @@ const admin = { "content-type": "application/json", "x-forwarded-email": "simula
     createJourney: (body) => call("/api/journeys", { method: "POST", headers: admin, body: JSON.stringify(body) }),
     muteAlert: (id, body) => call(`/api/alerts/${id}/mute`, { method: "POST", headers: admin, body: JSON.stringify(body) }),
     unmuteAlert: (id, body) => call(`/api/alerts/${id}/unmute`, { method: "POST", headers: admin, body: JSON.stringify(body) }),
+    startReconciliation: (body) => call("/api/reconciliation", { method: "POST", headers: admin, body: JSON.stringify(body) }),
+    reconciliationRun: (id) => call(`/api/reconciliation/${id}`, { headers: admin }),
+    listReconciliations: () => call("/api/reconciliation", { headers: admin }),
     journeys: () => call("/api/journeys", { headers: admin }),
     sendWebhook: (payload, { secret = webhookSecret, raw } = {}) =>
       call("/api/webhooks/datadog", {

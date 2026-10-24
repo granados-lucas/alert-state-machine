@@ -21,6 +21,8 @@ const remediationRoute = await import("./alerts/[id]/remediations/[remediationId
 const applicationsRoute = await import("./applications/route");
 const muteRoute = await import("./alerts/[id]/mute/route");
 const unmuteRoute = await import("./alerts/[id]/unmute/route");
+const reconciliationRoute = await import("./reconciliation/route");
+const reconciliationRunRoute = await import("./reconciliation/[id]/route");
 const journeysRoute = await import("./journeys/route");
 const journeyRoute = await import("./journeys/[id]/route");
 const journeyAppsRoute = await import("./journeys/[id]/applications/route");
@@ -297,3 +299,64 @@ describe("silenciar monitor no Datadog", () => {
     expect((await call(muteRoute, id, { minutes: 5, reason: "teste" })).status).toBe(501);
   });
 });
+
+describe("reconciliação", () => {
+  const monitors = (state: string) => new Response(JSON.stringify([{ id: 7001, name: "Reconciliado", overall_state: state, tags: ["service:rec-api"], priority: 1 }]), { status: 200 });
+  const start = (body: unknown) => reconciliationRoute.POST(req("/api/reconciliation", { method: "POST", headers: admin, body: JSON.stringify(body) }));
+  const run = (id: number | string) => reconciliationRunRoute.GET(req("/x"), ctx({ id: String(id) }));
+  const waitDone = async (id: number) => {
+    let body: { status: string; summary: Record<string, number> } | undefined;
+    await vi.waitFor(async () => {
+      body = await (await run(id)).json();
+      expect(body?.status).not.toBe("running");
+    });
+    return body!;
+  };
+  const enableDatadog = () => {
+    vi.stubEnv("DD_API_KEY", "dd-api-key-1234");
+    vi.stubEnv("DD_APP_KEY", "dd-app-key-1234");
+    vi.stubEnv("DD_API_BASE_URL", "http://dd.test");
+  };
+  afterEach(() => {
+    vi.stubEnv("DD_API_KEY", "");
+    vi.stubEnv("DD_APP_KEY", "");
+    vi.stubEnv("DD_API_BASE_URL", "");
+  });
+
+  it("sem credenciais do Datadog responde 503 e entradas inválidas, 400", async () => {
+    expect((await start({})).status).toBe(503);
+    enableDatadog();
+    expect((await start({ pageSize: 1 })).status).toBe(400);
+    expect((await start({ provider: "newrelic" })).status).toBe(400);
+    expect((await run("zz")).status).toBe(400);
+    expect((await run(99999999)).status).toBe(404);
+  });
+
+  it("inicia em segundo plano (202), cria o alerta lido do Datadog e registra o resultado", async () => {
+    enableDatadog();
+    const fetchMock = vi.fn().mockImplementation(async () => monitors("Alert"));
+    vi.stubGlobal("fetch", fetchMock);
+    const started = await start({ trigger: "schedule" });
+    expect(started.status).toBe(202);
+    const { id } = await started.json();
+    const done = await waitDone(id);
+    expect(done).toMatchObject({ status: "succeeded", summary: { created: 1, pages: 1 } });
+    expect(String(fetchMock.mock.calls[0][0])).toBe("http://dd.test/api/v1/monitor?page=0&page_size=100");
+    const list = await (await alertsRoute.GET(req("/api/alerts?application=rec-api"))).json();
+    expect(list.items[0]).toMatchObject({ externalId: "7001", state: "alert", application: "rec-api" });
+    const runs = await (await reconciliationRoute.GET()).json();
+    expect(runs.runs[0]).toMatchObject({ id, trigger: "schedule", actor: "ana" });
+  });
+
+  it("recusa uma segunda execução enquanto outra está em andamento (409)", async () => {
+    enableDatadog();
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => monitors("OK")));
+    const { reconciliationRuns } = await import("@/db/schema");
+    const [blocker] = await db.insert(reconciliationRuns).values({ provider: "datadog", trigger: "manual", actor: "outro" }).returning();
+    expect((await start({})).status).toBe(409);
+    const { eq } = await import("drizzle-orm");
+    await db.update(reconciliationRuns).set({ status: "failed" }).where(eq(reconciliationRuns.id, blocker.id));
+    expect((await start({ dryRun: true })).status).toBe(202);
+  });
+});
+

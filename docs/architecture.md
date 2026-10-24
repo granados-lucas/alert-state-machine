@@ -15,12 +15,13 @@ src/
 ├── providers/                # PORTA para ferramentas de monitoramento
 │   ├── types.ts              # AlertProvider, NormalizedEvent
 │   ├── index.ts              # registro (id → adaptador)
-│   └── datadog/              # único lugar que conhece o Datadog: payload do webhook (index.ts) e API v1 de mute (api.ts)
+│   └── datadog/              # único lugar que conhece o Datadog: webhook (index.ts), mute (api.ts), listagem (source.ts), equivalência de estados (states.ts)
 ├── server/                   # casos de uso; recebem o banco por parâmetro (Db)
 │   ├── ingest.ts             # webhook → transação idempotente e serializada por alerta
 │   ├── alerts.ts             # criar/atualizar/arquivar alerta, remediações (com auditoria)
 │   ├── remediation.ts        # validação, allowlist, execução, limite de concorrência
 │   ├── muting.ts             # silenciar/reativar monitor no provedor (com auditoria e sincronização de estado)
+│   ├── reconcile.ts          # reconciliação: lê os monitores do provedor e corrige divergências (respeita limite de uso)
 │   ├── journeys.ts           # criar/editar/trocar aplicações/remover jornada (com auditoria)
 │   ├── queries.ts            # mapa de jornadas, listagem paginada, detalhes
 │   └── http.ts, runtime.ts   # identidade do ator (cabeçalho do SSO), erros, `after()`
@@ -30,7 +31,7 @@ src/
 ├── components/               # journey-map (mapa), journey-form, alert-graph (máquina, React Flow), alert-form, ui
 ├── db/                       # schema (8 tabelas), pool pg
 └── test/db.ts                # PGlite com as migrações reais, só para testes
-drizzle/                      # 0000_init, 0001_audit_immutable (trigger), 0002_drop_dependencies, 0003_journeys, 0004_monitor_mute
+drizzle/                      # 0000_init, 0001_audit_immutable (trigger), 0002_drop_dependencies, 0003_journeys, 0004_monitor_mute, 0005_provider_state, 0006_reconciliation
 simulator/                    # APLICAÇÃO SEPARADA que simula o Datadog (ver abaixo)
 Dockerfile, compose.yaml
 ```
@@ -64,6 +65,7 @@ POST /api/webhooks/datadog
 | `alerts` | Estado atual (`ok/warn/alert/no_data`), único por `(provider, external_id)`; `archived_at` em vez de exclusão |
 | `webhook_events` | Todo evento recebido, com `outcome` e payload bruto (idempotência e prova) |
 | `remediations`, `remediation_runs` | Configuração e execuções de remediação (webhook ou API) |
+| `reconciliation_runs` | Cada execução da reconciliação: opções, resumo, últimos cabeçalhos de limite, erro. Índice parcial garante no máximo uma `running` por provedor |
 | `alerts.provider_state*` | Último `overall_state` bruto lido da API (ex.: `Skipped`) e quando |
 | `alerts.muted_*` | Silêncio aplicado no provedor por esta aplicação (até quando, escopo, motivo, quem) |
 | `audit_log` | Trilha **somente de inserção** (trigger bloqueia UPDATE/DELETE/TRUNCATE): criação, alterações com antes/depois, mudanças de estado, remediações, jornadas |
@@ -73,6 +75,10 @@ Chaves `bigint` por identidade, `timestamptz`, FKs indexadas, índice parcial `(
 ## Ações no provedor: silenciar monitor
 
 `AlertProvider.control` (porta `MonitorControl`: `mute`/`unmute`) existe só quando há credenciais; o adaptador do Datadog usa `POST /api/v1/monitor/{id}/mute|unmute` (ver `docs/integrations/datadog.md`). Fluxo de `muteAlert`: validar (alerta existe, não arquivado, provedor suportado e configurado) → **chamar o provedor** → gravar `muted_*` no alerta + auditoria `monitor_muted` → aplicar o estado devolvido pelo provedor como evento sintético (`ingestEvent`, que também aciona remediações). Falha do provedor: auditoria `monitor_mute_failed`, nada muda, erro 502/404. Salvaguardas: prazo obrigatório (máx. 7 dias), motivo obrigatório, destino fixo `https://api.<site>` (lista fechada de sites), sem redirecionamento, timeout de 10 s, id do monitor numérico, chaves fora de logs/erros. Limitação: chamada ao provedor e gravação local não são atômicas; se a gravação falhar depois de o Datadog aceitar, o silêncio existe lá e não aqui (o erro é registrado no log).
+
+## Reconciliação
+
+`POST /api/reconciliation` cria o registro (409 se já há uma execução) e responde **202**; a leitura roda em segundo plano (`after()`), acompanhada por `GET /api/reconciliation/{id}`. Cada monitor listado vira, quando difere do estado local, um evento sintético pelo mesmo `ingestEvent` do webhook (idempotente, auditado, com remediações), com o **instante da leitura** como horário: um webhook mais novo vence. Detalhes de paginação, limite de uso e do que é só relatado em `docs/integrations/datadog.md`. Limitação: o processamento é do processo (não há fila durável); se ele cair, a execução fica `running` até ser considerada abandonada (30 min).
 
 ## Remediação (segurança)
 
@@ -113,6 +119,8 @@ Aplicação separada (próprio `package.json` e Dockerfile, sem dependências, s
 | Eventos antigos descartados (`stale`) | Entregas sem garantia de ordem | — |
 | Silêncio = API v1 do monitor (como pedido), não Downtimes v2 | Pedido explícito; endpoint sem aviso de descontinuação | Se o Datadog descontinuar: trocar o adaptador por Downtimes v2 |
 | Alerta silenciado continua contando na saúde | A saúde deve refletir a realidade; o silêncio é só um aviso visual | Se o negócio quiser excluir silenciados do cálculo |
+| Reconciliação em segundo plano no processo da aplicação, disparada por tela/API/script | Simples e sem novo serviço; o script externo só chama a API | Fila durável/worker dedicado se as execuções ficarem longas ou o processo reiniciar com frequência |
+| "Ausentes" só relatados, nunca arquivados | Uma listagem parcial ou um filtro errado não pode apagar alertas | Opção explícita de arquivar, com confirmação |
 | Auditoria única (`audit_log`) | Linha do tempo simples; trigger garante imutabilidade | Volume alto: particionar por mês |
 | Remediação executada depois da resposta (`after()`) | O Datadog tem timeout de 15 s; remediação lenta não pode causar reenvio | Fila durável se perder execuções em queda do processo for inaceitável |
 | PGlite nos testes + PostgreSQL real no Docker/simulador | Testes rápidos sem servidor; a concorrência real só aparece no PostgreSQL | — |

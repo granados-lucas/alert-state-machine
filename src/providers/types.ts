@@ -25,6 +25,28 @@ export interface MonitorControl {
   unmute(externalId: string, options: { scope?: string; allScopes?: boolean }): Promise<MonitorSnapshot>;
 }
 
+/** Monitor como o provedor o lista, já com a equivalência de estado aplicada pelo adaptador. */
+export type ProviderMonitor = {
+  externalId: string;
+  name: string;
+  /** Aplicação a que o monitor pertence (no Datadog, a tag service:). */
+  application: string;
+  /** Estado bruto do provedor (ex.: "Skipped"). */
+  rawState: string | null;
+  /** Evento que leva ao estado equivalente; null = o estado atual deve ser mantido. */
+  event: AlertEvent | null;
+  tags: string[];
+  priority: number | null;
+};
+
+/** Cabeçalhos de limite de uso (Datadog: X-RateLimit-*). Valores ausentes ficam indefinidos. */
+export type RateLimitInfo = { limit?: number; period?: number; remaining?: number; resetSeconds?: number; name?: string };
+
+/** Leitura em lote dos monitores do provedor (reconciliação). */
+export interface MonitorSource {
+  listMonitors(options: { page: number; pageSize: number; tags?: string[] }): Promise<{ monitors: ProviderMonitor[]; rateLimit: RateLimitInfo }>;
+}
+
 export interface AlertProvider {
   readonly id: string;
   /** Verifica a origem da requisição; falso = 401. */
@@ -33,6 +55,8 @@ export interface AlertProvider {
   parse(body: unknown): NormalizedEvent;
   /** Presente só quando o provedor está configurado para receber ações (credenciais de API). */
   readonly control?: MonitorControl;
+  /** Idem, para listar monitores (reconciliação). */
+  readonly source?: MonitorSource;
 }
 
 export class ProviderPayloadError extends Error {}
@@ -44,5 +68,15 @@ export class ProviderApiError extends Error {
     readonly status: number | null,
   ) {
     super(message);
+  }
+}
+
+/** O provedor limitou o uso (HTTP 429): espere `resetSeconds` antes de tentar de novo. */
+export class ProviderRateLimitError extends ProviderApiError {
+  constructor(
+    message: string,
+    readonly rateLimit: RateLimitInfo,
+  ) {
+    super(message, 429);
   }
 }

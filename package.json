@@ -13,10 +13,11 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:simulator": "node --test \"simulator/test/*.test.mjs\"",
+    "test:scripts": "node --test \"scripts/*.test.mjs\"",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "check": "pnpm lint && pnpm typecheck && pnpm lint:typed && pnpm lint:rules && pnpm test:coverage && pnpm test:simulator && pnpm build"
+    "check": "pnpm lint && pnpm typecheck && pnpm lint:typed && pnpm lint:rules && pnpm test:coverage && pnpm test:simulator && pnpm test:scripts && pnpm build"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.0",

@@ -115,3 +115,28 @@ Pontos de atenção:
 | `trigger` (inclui `Re-Triggered`) | `triggered` -> `alert` |
 
 A primeira regra que combina vence (por isso "Recovered from No Data" vira `ok`). Sem transição reconhecida vale `$ALERT_TYPE`: `success`->`recovered`, `warning`->`warned`, `error`->`triggered`; sem nada reconhecível o evento é gravado como `ignored`. Os textos de `Warn` e `No Data` são **inferidos** (a documentação lista só `Triggered`, `Recovered` e `Re-Triggered`).
+
+## Reconciliação: listar monitores e respeitar o limite de uso
+
+Estudo de 2026-10-24: [Get all monitors](https://docs.datadoghq.com/api/latest/monitors/get-all-monitors.md) e [Rate Limits](https://docs.datadoghq.com/api/latest/rate-limits/).
+
+| Item | Documentado | Uso aqui |
+|---|---|---|
+| Listar | `GET /api/v1/monitor`; permissão `monitors_read`; filtros `monitor_tags` (ex.: `service:my-app`), `name`, `tags`; paginação por `page` + `page_size` (padrão 100 quando há `page`; **sem `page` devolve tudo, sem limite**) ou por `id_offset` (começa em 0, usa o último id, repete até vir vazio) | `page`/`page_size`, páginas **a partir de 0** (suposição: a documentação não diz a base) e **sempre paginado** para nunca pedir "tudo" de uma vez |
+| Estado | cada monitor traz `overall_state` (enum de 7 valores) | passa pela [equivalência de estados](#equivalência-de-estados-datadog---aplicação) |
+| Limites de uso | **A documentação não publica números por endpoint** ("variam e vêm nos cabeçalhos"). Cada resposta traz `X-RateLimit-Limit` (requisições por janela), `-Period` (segundos da janela), `-Remaining`, `-Reset` (segundos até zerar) e `-Name` (nome do limite; endpoints com o mesmo nome compartilham a cota). Estourar devolve **429**; a orientação é esperar o período ou andar um pouco abaixo do limite. Os limites valem por organização/usuário/chave de API (não detalhado por endpoint). Aumentos só pelo suporte | A aplicação **não fixa números**: lê os cabeçalhos a cada resposta |
+
+**Como a reconciliação se comporta com o limite (`src/server/reconcile.ts`):**
+
+1. Lê **uma página por vez** (sequencial), nunca em paralelo.
+2. Se `X-RateLimit-Remaining` ≤ 1 e há `X-RateLimit-Reset`, **espera o reset (+1 s) antes da próxima página**, em vez de provocar um 429.
+3. Se mesmo assim receber **429**, espera `X-RateLimit-Reset` (ou `Period` se faltar; no mínimo 1 s, no máximo 120 s) **+ 1 s** e repete a mesma página, até **5 vezes**; depois disso a execução falha com a mensagem do 429.
+4. Para depois de **10 minutos** ou de **200 páginas** (configurável até 500) e marca a execução como *parcial*; nesse caso **não calcula "ausentes"** (a listagem está incompleta).
+5. Guarda os últimos cabeçalhos vistos na execução (aparecem na tela), para você ver a cota real da sua conta.
+6. Só **uma execução por vez** por provedor; uma execução que morreu com o processo é liberada após 30 min.
+
+Custo: com 100 por página, 1.000 monitores = 10 requisições por execução; rodar a cada 5 min = ~120 requisições/hora. **Confirme a cota real** da sua conta olhando os cabeçalhos da primeira execução. O silêncio (mute/unmute) pode dividir a mesma cota se tiver o mesmo `X-RateLimit-Name` (não verificado).
+
+**O que a reconciliação faz por monitor:** sem alerta correspondente → cria (desligável); alerta arquivado → ignora; estado do Datadog sem equivalente (Skipped, Ignored) → mantém o estado e guarda o valor bruto; estado equivalente diferente do local → aplica como evento sintético (`reconcile:<execução>:<monitor>`, ator `system:reconciliation`, auditado, dispara remediações). O evento carrega o **instante em que a página foi lida**: se um webhook mais novo chegou durante a leitura, o dado lido é descartado (`stale`) em vez de sobrescrever o webhook. Alertas que o Datadog deixou de listar são **apenas relatados** ("ausentes"), nunca arquivados automaticamente.
+
+**Não verificado:** teto de `page_size`; base 0 de `page`; o nome do limite e a cota de `GET /api/v1/monitor` na sua conta; se `id_offset` combina com `page_size`. Nunca executado contra o Datadog real.

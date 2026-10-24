@@ -13,6 +13,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { ALERT_STATES } from "@/domain/alert-machine";
 
@@ -24,6 +25,7 @@ export const alertState = pgEnum("alert_state", ALERT_STATES);
 export const eventOutcome = pgEnum("event_outcome", ["applied", "unchanged", "stale", "ignored"]);
 export const remediationMode = pgEnum("remediation_mode", ["webhook", "api"]);
 export const runStatus = pgEnum("run_status", ["success", "failed", "skipped"]);
+export const reconciliationStatus = pgEnum("reconciliation_status", ["running", "succeeded", "partial", "failed"]);
 export const auditKind = pgEnum("audit_kind", [
   "alert_created",
   "alert_updated",
@@ -41,6 +43,7 @@ export const auditKind = pgEnum("audit_kind", [
   "monitor_muted",
   "monitor_unmuted",
   "monitor_mute_failed",
+  "reconciliation_run",
 ]);
 
 export const applications = pgTable("applications", {
@@ -189,6 +192,30 @@ export const auditLog = pgTable(
     index("audit_log_application_id_idx").on(t.applicationId, t.id),
     index("audit_log_at_idx").on(t.at),
     index("audit_log_event_id_idx").on(t.eventId),
+  ],
+);
+
+// Cada execução da reconciliação com o provedor. No máximo uma "running" por provedor (índice parcial).
+export const reconciliationRuns = pgTable(
+  "reconciliation_runs",
+  {
+    id: id(),
+    provider: text().notNull(),
+    trigger: text().notNull(),
+    actor: text().notNull(),
+    status: reconciliationStatus().notNull().default("running"),
+    dryRun: boolean("dry_run").notNull().default(false),
+    options: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    summary: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    // Últimos cabeçalhos X-RateLimit-* vistos (a documentação não publica números por endpoint).
+    rateLimit: jsonb("rate_limit").$type<Record<string, unknown>>().notNull().default({}),
+    error: text(),
+    startedAt: at("started_at").notNull().defaultNow(),
+    finishedAt: at("finished_at"),
+  },
+  (t) => [
+    uniqueIndex("reconciliation_runs_one_running_idx").on(t.provider).where(sql`${t.status} = 'running'`),
+    index("reconciliation_runs_started_at_idx").on(t.startedAt),
   ],
 );
 

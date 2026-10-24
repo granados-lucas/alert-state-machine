@@ -19,8 +19,9 @@ Sistema interno da empresa. Usuários: pessoas de engenharia/operação que acom
 5. **Criar alerta** (`/alerts/new`, `POST /api/alerts`): registra o monitor antes do primeiro webhook, com remediação opcional. Monitores desconhecidos também são descobertos automaticamente no primeiro evento.
 6. **Remediação automática:** ao entrar em estados escolhidos (padrão: Alerta), o sistema aciona outra ferramenta por **webhook** (payload padrão) ou **API** (método, headers e corpo próprios), registra o resultado e audita.
 7. **Silenciar monitor no Datadog** (`POST /api/alerts/{id}/mute|unmute`, botão na página do alerta): a aplicação chama a API do Datadog para silenciar (com prazo de 1 min a 7 dias e motivo obrigatórios, escopo opcional) ou reativar o monitor. O estado informado pelo Datadog na resposta é aplicado ao alerta; o silêncio fica visível ("Silenciado") e auditado, mas o alerta continua contando na saúde da jornada.
-8. **Auditoria:** todo evento recebido, mudança de estado, criação/alteração/arquivamento de alerta, mudança de remediação, execução de remediação e mudanças em jornadas ficam em uma trilha só de inserção.
-9. **Máquina de estados** (`/graph`): estados e transições permitidas.
+8. **Reconciliação com o Datadog** (`/reconciliation`, `POST /api/reconciliation`, `scripts/reconcile.mjs`): compara o estado de cada alerta com o `overall_state` dos monitores no Datadog e corrige divergências (webhook perdido, monitor silenciado, estado inicial), cria alertas de monitores novos e aponta os que sumiram. Tem modo de simulação, respeita o limite de uso da API (cabeçalhos `X-RateLimit-*`, 429) e roda manualmente pela tela ou periodicamente pelo script.
+9. **Auditoria:** todo evento recebido, mudança de estado, criação/alteração/arquivamento de alerta, mudança de remediação, execução de remediação e mudanças em jornadas ficam em uma trilha só de inserção.
+10. **Máquina de estados** (`/graph`): estados e transições permitidas.
 
 ## Fora do escopo
 
@@ -30,7 +31,6 @@ Sistema interno da empresa. Usuários: pessoas de engenharia/operação que acom
 - Mais de um provedor ao mesmo tempo (a abstração está pronta; o segundo adaptador não existe).
 - Dependências entre aplicações (substituídas por jornadas, decisão do solicitante em 2026-10-24).
 - Jornada por alerta: a jornada é definida por aplicação; um alerta pertence às jornadas da sua aplicação.
-- Reconciliação com a Monitors API do Datadog (recomendada, ver `docs/integrations/datadog.md`).
 
 ## Requisitos
 
@@ -62,7 +62,7 @@ Pendências (decisão externa ou validação com ambiente real):
 | Decisão | Impacto | Próximo passo |
 |---|---|---|
 | Valores reais de `$ALERT_TRANSITION` (Warn/No Data) e escape de JSON no payload do Datadog | Mapeamento de estados e perda de eventos com aspas no nome | Configurar o webhook num monitor de teste em cada estado (ver `docs/integrations/datadog.md`) |
-| Reconciliação com a Monitors API (chaves, escopo `monitors_read`, frequência) | Recuperar eventos perdidos e o estado inicial | Definir credenciais e implementar o job |
+| Chave do Datadog com `monitors_read` e frequência da reconciliação em produção | A reconciliação só foi testada contra o Datadog simulado; a cota real da conta é desconhecida | Rodar uma simulação (dry-run) e ler os cabeçalhos de limite na tela |
 | Equivalência de `Unknown`, `Skipped` e `Ignored` do Datadog (hoje: `Unknown`→Sem dados; `Skipped` e `Ignored` mantêm o estado) e monitores multi-alerta por grupo | Fidelidade do estado | Confirmar com quem opera os monitores; tabela em `docs/integrations/datadog.md` |
 | Chaves reais do Datadog (`monitors_write`) e validação do silêncio com um monitor de teste | O silêncio só foi testado contra o Datadog simulado | Criar chave de serviço e testar em homologação (ver `docs/integrations/datadog.md`) |
 | Origem das jornadas (manual hoje) | Manter o mapa atualizado sem trabalho manual | Avaliar derivar de uma tag `journey:` nos monitores ou do Service Catalog do Datadog (não verificado) |
@@ -84,7 +84,7 @@ Pendências (decisão externa ou validação com ambiente real):
 
 ## Próxima entrega
 
-Validar o webhook com um monitor real do Datadog em ambiente de teste (transições e escape de JSON) e implementar a reconciliação via Monitors API. Em paralelo, definir a autenticação de usuários.
+Validar webhook, silêncio e reconciliação com um monitor real do Datadog em ambiente de teste (transições, escape de JSON, base de `page`, cota de `GET /api/v1/monitor`) e confirmar com a operação a equivalência de `Unknown`, `Skipped` e `Ignored`. Depois, agendar a reconciliação em produção (`scripts/reconcile.mjs --every 300`).
 
 ## Manutenção
 

@@ -2,7 +2,9 @@ import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 import { createDatadogControl, type DatadogApiConfig } from "./api";
+import { createDatadogSource } from "./source";
 import { mapTransition } from "./states";
+import { applicationFromTags } from "./tags";
 
 export const DATADOG_SECRET_HEADER = "x-webhook-secret";
 
@@ -23,14 +25,7 @@ const payloadSchema = z.object({
 
 export { mapTransition };
 
-export function applicationFromTags(tags: string[]) {
-  for (const key of ["service", "app", "application"]) {
-    const hit = tags.find((tag) => tag.toLowerCase().startsWith(`${key}:`));
-    const value = hit?.slice(key.length + 1).trim();
-    if (value) return value;
-  }
-  return "unassigned";
-}
+export { applicationFromTags };
 
 // O link vira href na interface: só http(s) passa.
 function safeHttpUrl(value: string) {
@@ -48,6 +43,7 @@ export function createDatadogProvider(options: { secret: string | undefined; api
   return {
     id: "datadog",
     control: options.api ? createDatadogControl(options.api, options.fetch) : undefined,
+    source: options.api ? createDatadogSource(options.api, options.fetch) : undefined,
     authenticate(headers) {
       const received = headers.get(DATADOG_SECRET_HEADER);
       return Boolean(options.secret && received && safeEqual(received, options.secret));

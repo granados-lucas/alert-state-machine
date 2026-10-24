@@ -48,6 +48,7 @@ pnpm check        # lint, tipos, regras, testes com cobertura, testes do simulad
 | Criar alerta com remediação opcional | `/alerts/new` |
 | Máquina de estados | `/graph` |
 | Silenciar/reativar o monitor no Datadog | botão na página do alerta; `POST /api/alerts/[id]/mute` e `/unmute` ([detalhes](docs/integrations/datadog.md#silenciar-monitores-pela-api-ação-da-aplicação-no-datadog)) |
+| Reconciliação com o Datadog (tela, API e script) | `/reconciliation`; `POST /api/reconciliation`; `scripts/reconcile.mjs` ([detalhes](docs/integrations/datadog.md#reconciliação-listar-monitores-e-respeitar-o-limite-de-uso)) |
 | Webhook do Datadog | `POST /api/webhooks/datadog` ([como configurar](docs/integrations/datadog.md)) |
 | API de gestão (sem token: a autenticação é do SSO na frente; identidade em `AUTH_USER_HEADER`) | `/api/alerts`, `/api/alerts/[id]`, `/api/alerts/[id]/remediations`, `/api/applications`, `/api/journeys`, `/api/journeys/[id]`, `/api/journeys/[id]/applications` |
 
@@ -61,3 +62,21 @@ pnpm check        # lint, tipos, regras, testes com cobertura, testes do simulad
 - [Verificações de qualidade](docs/quality.md)
 - [Instruções para agentes](AGENTS.md)
 - [Setup e evidências](docs/setup.md)
+
+## Reconciliação periódica
+
+A tela **Reconciliação** roda sob demanda. Para repetir sozinha, use o script (sem dependências, Node 18+), que chama a API da aplicação e espera o resultado:
+
+```bash
+node scripts/reconcile.mjs --url http://localhost:3000 --dry-run     # só simula
+node scripts/reconcile.mjs --url http://localhost:3000               # uma execução
+node scripts/reconcile.mjs --url http://app:3000 --every 300         # repete a cada 5 min
+node scripts/reconcile.mjs --help
+```
+
+Códigos de saída (uma execução): `0` concluída, `1` falhou, `2` uso incorreto, `3` parcial, `4` aplicação inacessível, `5` já havia uma execução. Duas execuções nunca rodam ao mesmo tempo.
+
+- **Docker Compose:** `docker compose --profile reconcile up -d reconciler` (intervalo em `RECONCILE_EVERY`, padrão 300 s).
+- **cron:** `*/5 * * * * node /opt/app/scripts/reconcile.mjs --url http://app:3000`.
+- **Kubernetes:** um `CronJob` (`schedule: "*/5 * * * *"`, `concurrencyPolicy: Forbid`) com a imagem `node:24-alpine` e o script montado de um ConfigMap, comando `node /job/reconcile.mjs --url http://app:3000`.
+- O script se identifica no cabeçalho de identidade (`--identity`, padrão `reconciler@job`); em produção rode-o **dentro da rede**, sem passar pelo SSO.

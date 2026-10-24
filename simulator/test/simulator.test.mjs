@@ -147,3 +147,43 @@ test("monitor silenciado: o estado muda só no provedor (silentChange)", () => {
   assert.equal(model.apply("1", "alert", 2), "applied");
   assert.equal(model.get("1").truth, "alert");
 });
+
+test("Datadog simulado: listagem paginada com filtro de tags, desvios e limite de uso", async () => {
+  const monitors = Array.from({ length: 25 }, (_, i) => ({ monitorId: String(100 + i), name: `m${i}`, application: i < 5 ? "web" : "api", team: "core", priority: 1 }));
+  const fake = createFakeDatadog({ apiKey: "k1", appKey: "k2", getTruth: () => "ok", monitors: () => monitors, now: () => 5_000 });
+  const receiver = await startReceiver({ port: 0, token: "tok", extraHandler: fake.handle });
+  const get = (query, headers = { "DD-API-KEY": "k1", "DD-APPLICATION-KEY": "k2" }) =>
+    fetch(`http://127.0.0.1:${receiver.port}/api/v1/monitor${query}`, { headers }).then(async (r) => ({ status: r.status, headers: r.headers, body: await r.json() }));
+
+  assert.equal((await get("", {})).status, 403);
+  assert.equal((await get("")).body.length, 25); // sem page: tudo
+  assert.equal((await get("?page=0&page_size=10")).body.length, 10);
+  assert.equal((await get("?page=2&page_size=10")).body.length, 5);
+  assert.equal((await get("?page=3&page_size=10")).body.length, 0);
+  assert.equal((await get("?monitor_tags=service%3Aweb")).body.length, 5);
+  assert.equal((await get("?page=0")).body.length, 25); // page_size padrão 100
+
+  fake.overrides.set("100", "Skipped");
+  fake.hidden.add("101");
+  fake.ghosts.push({ id: 999, name: "g", overall_state: "Alert", tags: ["service:ghost"], priority: null });
+  const all = (await get("")).body;
+  assert.equal(all.find((m) => m.id === 100).overall_state, "Skipped");
+  assert.equal(all.some((m) => m.id === 101), false);
+  assert.equal(all.some((m) => m.id === 999), true);
+
+  fake.setRateLimit(2, 1000);
+  const first = await get("?page=0&page_size=5");
+  assert.equal(first.headers.get("x-ratelimit-remaining"), "1");
+  assert.equal(first.headers.get("x-ratelimit-limit"), "2");
+  assert.equal((await get("?page=1&page_size=5")).status, 200);
+  const limited = await get("?page=2&page_size=5");
+  assert.equal(limited.status, 429);
+  assert.equal(limited.headers.get("x-ratelimit-reset"), "1");
+  assert.equal(fake.stats.rateLimited, 1);
+  fake.clearRateLimit();
+  assert.equal((await get("?page=2&page_size=5")).status, 200);
+  fake.setRateLimit(5, 1000);
+  fake.exhaustRateLimit();
+  assert.equal((await get("")).status, 429);
+  await receiver.close();
+});

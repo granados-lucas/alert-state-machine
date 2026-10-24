@@ -3,7 +3,9 @@ import { after } from "next/server";
 import { getDb } from "@/db";
 import { getRemediationAllowedHosts } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import type { RemediationDeps } from "./remediation";
+import { getProvider } from "@/providers";
+import type { ReconcileDeps } from "./reconcile";
+import { runRemediations, type RemediationDeps } from "./remediation";
 
 export const database = () => getDb();
 
@@ -11,6 +13,12 @@ export const remediationDeps = (): RemediationDeps => ({
   fetch,
   allowedHosts: getRemediationAllowedHosts(),
   env: process.env,
+});
+
+/** Dependências da reconciliação: provedores reais e remediações pelo mesmo caminho do webhook. */
+export const reconcileDeps = (db: ReturnType<typeof getDb>): ReconcileDeps => ({
+  getProvider,
+  runRemediations: (pending) => runRemediations(db, pending, remediationDeps()),
 });
 
 /** Executa depois de responder (Next `after`); fora de uma requisição (testes, scripts) roda direto. */

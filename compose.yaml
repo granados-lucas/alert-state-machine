@@ -112,5 +112,22 @@ services:
       app:
         condition: service_healthy
 
+  # Reconciliação periódica com o Datadog (opcional, desligada por padrão):
+  #   docker compose --profile reconcile up -d reconciler      (intervalo: RECONCILE_EVERY, em segundos)
+  # Roda scripts/reconcile.mjs, que chama a API da aplicação; o job não acessa banco nem Datadog.
+  reconciler:
+    profiles: ["reconcile"]
+    image: node:24-alpine
+    restart: unless-stopped
+    volumes:
+      - ./scripts/reconcile.mjs:/job/reconcile.mjs:ro
+    environment:
+      RECONCILE_URL: http://app:3000
+      AUTH_USER_HEADER: ${AUTH_USER_HEADER:-x-forwarded-email}
+    command: ["node", "/job/reconcile.mjs", "--every", "${RECONCILE_EVERY:-300}"]
+    depends_on:
+      app:
+        condition: service_healthy
+
 volumes:
   pgdata:
