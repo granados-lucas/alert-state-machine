@@ -1,0 +1,116 @@
+# Aplicação inteira em Docker:  docker compose up --build
+# Simulador do Datadog (aplicação separada):  docker compose --profile simulator run --rm simulator
+#
+# Os valores padrão abaixo servem só para desenvolvimento local (portas ligadas a 127.0.0.1).
+# Para qualquer outro ambiente, defina segredos próprios em .env (veja .env.docker.example).
+name: global-alerts
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: alerts
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alerts-dev-password}
+      POSTGRES_DB: alerts
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alerts -d alerts"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Executa uma vez e termina; o app só sobe depois que as migrações terminam bem.
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://alerts:${POSTGRES_PASSWORD:-alerts-dev-password}@db:5432/alerts
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    environment: &app-env
+      DATABASE_URL: postgresql://alerts:${POSTGRES_PASSWORD:-alerts-dev-password}@db:5432/alerts
+      # Identidade do usuário: o SSO corporativo na frente preenche este cabeçalho (auditoria). Sem SSO,
+      # tudo é registrado como "anonymous" e a aplicação NÃO deve ser exposta (portas só em 127.0.0.1).
+      AUTH_USER_HEADER: ${AUTH_USER_HEADER:-x-forwarded-email}
+      DATADOG_WEBHOOK_SECRET: ${DATADOG_WEBHOOK_SECRET:-dev-datadog-secret-change-me-01}
+      # Destinos de remediação permitidos (host ou host:porta). O simulador precisa estar na lista.
+      REMEDIATION_ALLOWED_HOSTS: ${REMEDIATION_ALLOWED_HOSTS:-simulator:9100,simulator-demo:9100}
+      # Valor referenciado por headers "env:SIMULATOR_REMEDIATION_TOKEN" das remediações do simulador.
+      SIMULATOR_REMEDIATION_TOKEN: ${SIMULATOR_REMEDIATION_TOKEN:-dev-remediation-token-change-me-01}
+      # API do Datadog (silenciar monitores). Por padrão aponta para o Datadog simulado do simulador.
+      # Para o Datadog real: DD_API_BASE_URL= (vazio), DD_SITE=<seu site> e chaves reais em .env.
+      DD_API_KEY: ${DD_API_KEY:-dev-datadog-api-key-0001}
+      DD_APP_KEY: ${DD_APP_KEY:-dev-datadog-app-key-0001}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_API_BASE_URL: ${DD_API_BASE_URL-http://datadog-sim:9100}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  simulator:
+    profiles: ["simulator"]
+    build:
+      context: ./simulator
+    environment:
+      TARGET_URL: http://app:3000
+      DATADOG_WEBHOOK_SECRET: ${DATADOG_WEBHOOK_SECRET:-dev-datadog-secret-change-me-01}
+      SIMULATOR_REMEDIATION_TOKEN: ${SIMULATOR_REMEDIATION_TOKEN:-dev-remediation-token-change-me-01}
+      RECEIVER_PUBLIC_URL: http://simulator:9100
+      DD_API_KEY: ${DD_API_KEY:-dev-datadog-api-key-0001}
+      DD_APP_KEY: ${DD_APP_KEY:-dev-datadog-app-key-0001}
+    # Alias explícito: `docker compose run` não cria o alias do serviço por padrão, e a aplicação
+    # principal chama o receptor de remediação por este nome.
+    networks:
+      default:
+        aliases: [simulator, datadog-sim]
+    command: ["node", "src/cli.mjs", "run", "--apps", "32", "--alerts", "200", "--events", "1500"]
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # Demonstração contínua: muda o estado de alertas aleatórios para você acompanhar a interface.
+  #   docker compose --profile demo up -d      (parar: docker compose --profile demo stop demo)
+  # Ids de monitor fixos: reiniciar não cria alertas novos.
+  demo:
+    profiles: ["demo"]
+    build:
+      context: ./simulator
+    restart: unless-stopped
+    environment:
+      TARGET_URL: http://app:3000
+      DATADOG_WEBHOOK_SECRET: ${DATADOG_WEBHOOK_SECRET:-dev-datadog-secret-change-me-01}
+      SIMULATOR_REMEDIATION_TOKEN: ${SIMULATOR_REMEDIATION_TOKEN:-dev-remediation-token-change-me-01}
+      RECEIVER_PUBLIC_URL: http://simulator-demo:9100
+      DD_API_KEY: ${DD_API_KEY:-dev-datadog-api-key-0001}
+      DD_APP_KEY: ${DD_APP_KEY:-dev-datadog-app-key-0001}
+      MONITOR_ID_BASE: "900"
+    networks:
+      default:
+        aliases: [simulator-demo, datadog-sim]
+    command: ["node", "src/cli.mjs", "stream", "--apps", "32", "--alerts", "200", "--workers", "3", "--interval", "1500"]
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  pgdata:

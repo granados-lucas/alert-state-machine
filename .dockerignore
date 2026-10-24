@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.claude
+.agents
+graphify-out
+coverage
+simulator
+docs
+*.md
+.env*
+!.env.example
+tsconfig.tsbuildinfo
