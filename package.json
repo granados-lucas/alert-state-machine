@@ -1,0 +1,52 @@
+{
+  "name": "alert-state-machine",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "next typegen && tsc --noEmit",
+    "lint:typed": "eslint --config eslint.typed.config.mjs .",
+    "lint:rules": "node scripts/verify-quality-rules.mjs ./eslint-rules/index.cjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:simulator": "node --test \"simulator/test/*.test.mjs\"",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "check": "pnpm lint && pnpm typecheck && pnpm lint:typed && pnpm lint:rules && pnpm test:coverage && pnpm test:simulator && pnpm build"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.12.0",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.4",
+    "next": "16.4.3",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
+    "@next/env": "16.4.3",
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^5.0.5",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.3",
+    "eslint-plugin-drizzle": "^0.2.3",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^5.0.5"
+  },
+  "packageManager": "pnpm@12.11.2"
+}
