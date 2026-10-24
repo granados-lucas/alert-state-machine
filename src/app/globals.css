@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* Design system "FlowPay" (referência em docs/design-reference): escuro primeiro, acento roxo,
+   cores semânticas para estados. Tokens em docs/design.md. */
+@theme {
+  --color-bg: #0d0e17;
+  --color-surface: #12131c;
+  --color-surface-2: #181a26;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-fg: #f4f4f8;
+  --color-muted: #9395ab;
+  --color-accent: #8a62ff;
+  --color-accent-soft: #a78bfa;
+  --color-ok: #7cffb2;
+  --color-warn: #f59e0b;
+  --color-alert: #ef4444;
+  --color-alert-fg: #f87171;
+  --color-info: #60a5fa;
+  --color-nodata: #94a3b8;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent-soft);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* React Flow no tema escuro do produto. */
+.react-flow {
+  --xy-background-color: var(--color-bg);
+  --xy-background-pattern-dots-color: rgb(255 255 255 / 0.12);
+  --xy-controls-button-background-color: var(--color-surface-2);
+  --xy-controls-button-background-color-hover: #222436;
+  --xy-controls-button-color: var(--color-fg);
+  --xy-controls-button-border-color: var(--color-line);
+  --xy-minimap-background-color: var(--color-surface);
+  --xy-minimap-mask-background-color: rgb(13 14 23 / 0.7);
+  --xy-attribution-background-color: transparent;
+  --xy-edge-label-background-color: var(--color-surface);
+  --xy-edge-label-color: var(--color-muted);
+}
+
+.react-flow__controls {
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.react-flow__attribution {
+  color: var(--color-muted);
+}
+
+.react-flow__attribution a {
+  color: var(--color-muted);
+}
+
+/* Destaque breve de um nó cujo estado acabou de mudar. */
+@keyframes flash-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(167 139 250 / 0.9);
+  }
+  100% {
+    box-shadow: 0 0 0 20px rgb(167 139 250 / 0);
+  }
+}
+
+.flash-ring {
+  animation: flash-ring 1.2s ease-out 2;
+}
