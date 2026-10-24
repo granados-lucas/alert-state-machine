@@ -1,6 +1,6 @@
 {
   "name": "datadog-simulator",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Simula o Datadog (monitores e webhooks) contra o Global Alerts. Aplicação separada: só usa a API HTTP da principal.",
   "type": "module",
