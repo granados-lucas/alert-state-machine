@@ -94,7 +94,15 @@ export async function muteAlert(db: Db, id: number, input: z.infer<typeof muteSc
   await db.transaction(async (tx) => {
     await tx
       .update(alerts)
-      .set({ mutedUntil: until, mutedScope: input.scope ?? null, muteReason: input.reason, mutedBy: actor, mutedAt: now, updatedAt: now })
+      .set({
+        mutedUntil: until,
+        mutedScope: input.scope ?? null,
+        muteReason: input.reason,
+        mutedBy: actor,
+        mutedAt: now,
+        updatedAt: now,
+        ...(snapshot.rawState ? { providerState: snapshot.rawState, providerStateAt: now } : {}),
+      })
       .where(eq(alerts.id, id));
     await tx.insert(auditLog).values({
       kind: "monitor_muted",
@@ -122,7 +130,15 @@ export async function unmuteAlert(db: Db, id: number, input: z.infer<typeof unmu
   await db.transaction(async (tx) => {
     await tx
       .update(alerts)
-      .set({ mutedUntil: null, mutedScope: null, muteReason: null, mutedBy: null, mutedAt: null, updatedAt: now })
+      .set({
+        mutedUntil: null,
+        mutedScope: null,
+        muteReason: null,
+        mutedBy: null,
+        mutedAt: null,
+        updatedAt: now,
+        ...(snapshot.rawState ? { providerState: snapshot.rawState, providerStateAt: now } : {}),
+      })
       .where(eq(alerts.id, id));
     await tx.insert(auditLog).values({
       kind: "monitor_unmuted",

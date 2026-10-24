@@ -43,6 +43,8 @@ describe("muteAlert", () => {
     const [row] = await db.select().from(alerts).where(eq(alerts.id, alert.id));
     expect(row).toMatchObject({ mutedScope: "host:a", muteReason: "deploy em andamento", mutedBy: "bia" });
     expect(await audit(alert.id)).toContain("monitor_muted");
+    expect(row).toMatchObject({ providerState: "OK" });
+    expect(row.providerStateAt).toEqual(NOW);
     const entry = (await db.select().from(auditLog).where(eq(auditLog.alertId, alert.id))).find((a) => a.kind === "monitor_muted");
     expect(entry).toMatchObject({ actor: "bia", details: { reason: "deploy em andamento", minutes: 60, scope: "host:a", providerState: "OK" } });
   });

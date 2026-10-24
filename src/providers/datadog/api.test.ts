@@ -52,6 +52,7 @@ describe("falhas", () => {
     await expect(control(new Response("<html>", { status: 502 })).mute("1", { until })).rejects.toMatchObject({ status: 502, message: "Datadog responded 502" });
     expect(await control(new Response("{}", { status: 200 })).mute("1", { until })).toEqual({ rawState: null, event: null });
     expect(await control(monitor("Skipped")).mute("1", { until })).toEqual({ rawState: "Skipped", event: null });
+    expect(await control(monitor("Unknown")).mute("1", { until })).toEqual({ rawState: "Unknown", event: "data_missing" });
   });
 
   it("falha de rede e timeout viram erro sem status e sem a URL", async () => {
@@ -78,7 +79,8 @@ describe("eventFromOverallState", () => {
     ["No Data", "data_missing"],
     ["Ignored", null],
     ["Skipped", null],
-    ["Unknown", null],
+    ["Unknown", "data_missing"],
+    ["Whatever", null],
     [null, null],
   ])("%s -> %s", (state, expected) => {
     expect(eventFromOverallState(state)).toBe(expected);

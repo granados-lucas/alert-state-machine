@@ -7,6 +7,7 @@ import { STATE_META } from "@/components/alert-graph/meta";
 import { Card, linkClass, SectionTitle, tableCell, tableHead } from "@/components/ui/ui";
 import { isMuted } from "@/domain/mute";
 import { getDatadogApiConfig } from "@/lib/env";
+import { resolveOverallState } from "@/providers/datadog/states";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getAlertDetail } from "@/server/queries";
@@ -46,6 +47,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   if (!detail) notFound();
   const { alert, remediations, runs, audit, journeys } = detail;
   const muted = isMuted(alert.mutedUntil);
+  const reported = alert.provider === "datadog" && alert.providerState ? resolveOverallState(alert.providerState) : null;
   const canMute = alert.provider === "datadog" && getDatadogApiConfig() !== undefined;
 
   return (
@@ -72,6 +74,18 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             </dd>
             <dt className="text-muted">Origem</dt>
             <dd>{alert.provider} · monitor {alert.externalId}{alert.link && <> · <a className={linkClass} href={alert.link} rel="noreferrer noopener">abrir no provedor</a></>}</dd>
+            {reported && (
+              <>
+                <dt className="text-muted">Estado no Datadog</dt>
+                <dd>
+                  <span className="font-medium">{reported.raw}</span>
+                  {reported.state ? <> equivale a <StateBadge state={reported.state} /></> : <> não altera o estado</>}
+                  {reported.state && reported.state !== alert.state && <span className="ml-2 text-warn">diferente do estado aqui ({STATE_META[alert.state].label}): rode a reconciliação</span>}
+                  <span className="ml-2 font-mono text-xs text-muted">lido em {formatTime(alert.providerStateAt)}</span>
+                  <span className="block text-xs text-muted">{reported.reason}</span>
+                </dd>
+              </>
+            )}
             <dt className="text-muted">Prioridade</dt>
             <dd>{alert.priority ? `P${alert.priority}` : "—"}</dd>
             <dt className="text-muted">Estado desde</dt>

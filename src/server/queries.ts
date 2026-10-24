@@ -137,7 +137,7 @@ export async function listAlerts(db: Db, params: ListAlertsParams = {}) {
 
 export async function getAlertDetail(db: Db, id: number) {
   const [alert] = await db
-    .select({ ...alertColumns, applicationId: alerts.applicationId, mutedScope: alerts.mutedScope, muteReason: alerts.muteReason, mutedBy: alerts.mutedBy, mutedAt: alerts.mutedAt, tags: alerts.tags, link: alerts.link, lastEventAt: alerts.lastEventAt, createdAt: alerts.createdAt })
+    .select({ ...alertColumns, applicationId: alerts.applicationId, providerState: alerts.providerState, providerStateAt: alerts.providerStateAt, mutedScope: alerts.mutedScope, muteReason: alerts.muteReason, mutedBy: alerts.mutedBy, mutedAt: alerts.mutedAt, tags: alerts.tags, link: alerts.link, lastEventAt: alerts.lastEventAt, createdAt: alerts.createdAt })
     .from(alerts)
     .innerJoin(applications, eq(applications.id, alerts.applicationId))
     .where(eq(alerts.id, id));

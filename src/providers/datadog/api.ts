@@ -1,25 +1,11 @@
-import type { AlertEvent } from "@/domain/alert-machine";
 import { ProviderApiError, type MonitorControl, type MonitorSnapshot } from "../types";
+import { eventFromOverallState } from "./states";
 
 export type DatadogApiConfig = { baseUrl: string; apiKey: string; appKey: string };
 
 const TIMEOUT_MS = 10_000;
 
-// `overall_state` do monitor (docs: Alert, Ignored, No Data, OK, Skipped, Unknown, Warn).
-export function eventFromOverallState(state: string | null): AlertEvent | null {
-  switch (state) {
-    case "OK":
-      return "recovered";
-    case "Warn":
-      return "warned";
-    case "Alert":
-      return "triggered";
-    case "No Data":
-      return "data_missing";
-    default:
-      return null; // Ignored, Skipped, Unknown: sem estado equivalente na máquina
-  }
-}
+export { eventFromOverallState };
 
 // Mensagem de erro do Datadog (`errors: string[]`), curta e sem chaves: só texto devolvido por ele.
 function describeError(body: unknown) {

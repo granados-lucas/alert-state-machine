@@ -36,6 +36,13 @@
       "when": 1792804332133,
       "tag": "0004_monitor_mute",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792837172306,
+      "tag": "0005_provider_state",
+      "breakpoints": true
     }
   ]
 }

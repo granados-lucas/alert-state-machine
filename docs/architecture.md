@@ -64,6 +64,7 @@ POST /api/webhooks/datadog
 | `alerts` | Estado atual (`ok/warn/alert/no_data`), único por `(provider, external_id)`; `archived_at` em vez de exclusão |
 | `webhook_events` | Todo evento recebido, com `outcome` e payload bruto (idempotência e prova) |
 | `remediations`, `remediation_runs` | Configuração e execuções de remediação (webhook ou API) |
+| `alerts.provider_state*` | Último `overall_state` bruto lido da API (ex.: `Skipped`) e quando |
 | `alerts.muted_*` | Silêncio aplicado no provedor por esta aplicação (até quando, escopo, motivo, quem) |
 | `audit_log` | Trilha **somente de inserção** (trigger bloqueia UPDATE/DELETE/TRUNCATE): criação, alterações com antes/depois, mudanças de estado, remediações, jornadas |
 
@@ -102,6 +103,7 @@ Aplicação separada (próprio `package.json` e Dockerfile, sem dependências, s
 |---|---|---|
 | Máquina de estados como tabela TypeScript pura | Uma só fonte para lógica e grafo; fácil de testar | Estados hierárquicos/paralelos (XState) |
 | Provedor por porta/adaptador | Requisito central: trocar o Datadog sem tocar no domínio | Novo provedor = novo adaptador |
+| Equivalência de estados do Datadog em um módulo só (`providers/datadog/states.ts`) | Webhook, silêncio e reconciliação precisam concordar; a tela e os testes leem a mesma tabela | Se `Unknown` precisar ser distinto de `No Data`: novo estado `unknown` |
 | Alerta nasce em `no_data` | "Sem informação" até o primeiro evento; evita inventar `ok` | Se o provedor informar o estado inicial por API |
 | Aplicação = tag `service:` (fallback `app:`/`application:`, senão `unassigned`) | Convenção de *unified service tagging* do Datadog | Se a empresa usar outra tag |
 | Status da aplicação e da jornada = pior estado (`alert > warn > no_data > ok`) | Pedido: 1 alerta em alert deixa a aplicação e a jornada vermelhas; jornada = pior das aplicações = pior de todos os alertas dela | Limiar percentual ou peso por prioridade, se jornadas grandes ficarem sempre vermelhas |

@@ -1,8 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import type { AlertEvent } from "@/domain/alert-machine";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 import { createDatadogControl, type DatadogApiConfig } from "./api";
+import { mapTransition } from "./states";
 
 export const DATADOG_SECRET_HEADER = "x-webhook-secret";
 
@@ -21,17 +21,7 @@ const payloadSchema = z.object({
   link: z.string().default(""),
 });
 
-const BY_ALERT_TYPE: Record<string, AlertEvent> = { success: "recovered", warning: "warned", error: "triggered" };
-
-export function mapTransition(transition: string, alertType: string): AlertEvent | null {
-  const t = transition.toLowerCase();
-  if (t.includes("recover")) return "recovered";
-  if (t.includes("no data") || t.includes("no_data")) return "data_missing";
-  if (t.includes("warn")) return "warned";
-  if (t.includes("trigger")) return "triggered";
-  // Sem transição reconhecida: o tipo do alerta ainda indica a severidade corrente.
-  return BY_ALERT_TYPE[alertType.toLowerCase()] ?? null;
-}
+export { mapTransition };
 
 export function applicationFromTags(tags: string[]) {
   for (const key of ["service", "app", "application"]) {

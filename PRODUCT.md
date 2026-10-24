@@ -63,7 +63,7 @@ Pendências (decisão externa ou validação com ambiente real):
 |---|---|---|
 | Valores reais de `$ALERT_TRANSITION` (Warn/No Data) e escape de JSON no payload do Datadog | Mapeamento de estados e perda de eventos com aspas no nome | Configurar o webhook num monitor de teste em cada estado (ver `docs/integrations/datadog.md`) |
 | Reconciliação com a Monitors API (chaves, escopo `monitors_read`, frequência) | Recuperar eventos perdidos e o estado inicial | Definir credenciais e implementar o job |
-| Estados `Ignored`, `Skipped`, `Unknown` do Datadog; monitores multi-alerta por grupo | Fidelidade do estado | Decidir com quem opera os alertas |
+| Equivalência de `Unknown`, `Skipped` e `Ignored` do Datadog (hoje: `Unknown`→Sem dados; `Skipped` e `Ignored` mantêm o estado) e monitores multi-alerta por grupo | Fidelidade do estado | Confirmar com quem opera os monitores; tabela em `docs/integrations/datadog.md` |
 | Chaves reais do Datadog (`monitors_write`) e validação do silêncio com um monitor de teste | O silêncio só foi testado contra o Datadog simulado | Criar chave de serviço e testar em homologação (ver `docs/integrations/datadog.md`) |
 | Origem das jornadas (manual hoje) | Manter o mapa atualizado sem trabalho manual | Avaliar derivar de uma tag `journey:` nos monitores ou do Service Catalog do Datadog (não verificado) |
 | SSO corporativo na frente da aplicação (provedor, cabeçalho de identidade, papéis) | **A aplicação não autentica nem autoriza nada** (decisão do MVP, 2026-10-24): todas as telas e a API de gestão confiam no SSO. Sem ele, qualquer pessoa que alcance o servidor pode silenciar monitores e cadastrar remediações | Colocar a aplicação atrás do SSO e configurar `AUTH_USER_HEADER`; avaliar papéis (leitura/operação) depois do MVP |

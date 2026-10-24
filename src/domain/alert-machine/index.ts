@@ -13,6 +13,11 @@ const TARGET: Record<AlertEvent, AlertState> = {
   data_missing: "no_data",
 };
 
+/** Evento que leva a um estado (inverso de TARGET): usado quando o provedor informa o estado, não a transição. */
+export function eventTo(state: AlertState): AlertEvent {
+  return ALERT_EVENTS.find((event) => TARGET[event] === state) as AlertEvent;
+}
+
 // Premissa: qualquer estado alcança qualquer outro. Restrições entram aqui, como dado.
 export const TRANSITIONS: Record<AlertState, Partial<Record<AlertEvent, AlertState>>> = Object.fromEntries(
   ALERT_STATES.map((from) => [

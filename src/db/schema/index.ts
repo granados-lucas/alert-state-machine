@@ -84,6 +84,9 @@ export const alerts = pgTable(
     tags: text().array().notNull().default(sql`'{}'::text[]`),
     link: text(),
     lastEventAt: at("last_event_at"),
+    // Último estado bruto lido da API do provedor (ex.: "Skipped") e quando; ver a equivalência em docs.
+    providerState: text("provider_state"),
+    providerStateAt: at("provider_state_at"),
     stateChangedAt: at("state_changed_at").notNull().defaultNow(),
     archivedAt: at("archived_at"),
     // Silêncio aplicado no provedor por esta aplicação (vale até mutedUntil; o provedor encerra sozinho).
