@@ -1,0 +1,13 @@
+{
+  "name": "datadog-simulator",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Simula o Datadog (monitores e webhooks) contra o Global Alerts. Aplicação separada: só usa a API HTTP da principal.",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "run": "node src/cli.mjs run",
+    "stream": "node src/cli.mjs stream"
+  }
+}
