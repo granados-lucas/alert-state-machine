@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ProviderApiError, ProviderRateLimitError, type MonitorSource, type ProviderMonitor, type RateLimitInfo } from "../types";
 import type { DatadogApiConfig } from "./api";
-import { applicationFromTags } from "./tags";
+import { applicationFromTags } from "../common";
 import { eventFromOverallState } from "./states";
 
 const TIMEOUT_MS = 30_000;

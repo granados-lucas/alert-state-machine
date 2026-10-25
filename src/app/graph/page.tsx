@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AlertGraph } from "@/components/alert-graph/alert-graph";
 import { StateBadge } from "@/components/state-badge";
 import { Card, PageHeader, SectionTitle, tableCell, tableHead } from "@/components/ui/ui";
-import { ALERT_TYPE_EQUIVALENCE, OVERALL_STATE_EQUIVALENCE, TRANSITION_EQUIVALENCE } from "@/providers/datadog/states";
+import { listProviderInfo } from "@/providers/catalog";
 
 export const metadata: Metadata = { title: "Máquina de estados · Global Alerts" };
 
@@ -16,37 +16,41 @@ export default function GraphPage() {
       <AlertGraph />
 
       <section aria-labelledby="equivalence" className="flex flex-col gap-3">
-        <SectionTitle id="equivalence">Equivalência com o Datadog</SectionTitle>
+        <SectionTitle id="equivalence">Equivalência de estados por fonte</SectionTitle>
         <p className="text-sm text-muted">
-          Como o estado informado pelo Datadog (campo <code>overall_state</code> da API, usado ao silenciar e na reconciliação) vira o estado desta aplicação.
-          Estados sem equivalente <strong>mantêm</strong> o estado atual. Fonte única: <code>src/providers/datadog/states.ts</code>.
+          Como o estado informado por cada fonte vira o estado desta aplicação. Estados sem equivalente <strong>mantêm</strong> o estado atual.
+          Fonte única: <code>src/providers/&lt;fonte&gt;/</code>. Nenhuma fonte foi validada contra o sistema real (ver <code>docs/integrations</code>).
         </p>
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full text-sm">
-            <caption className="sr-only">Equivalência entre os estados do Datadog e os desta aplicação</caption>
-            <thead>
-              <tr className="border-b border-line">
-                <th scope="col" className={tableHead}>Datadog</th>
-                <th scope="col" className={tableHead}>Aqui</th>
-                <th scope="col" className={tableHead}>Motivo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(OVERALL_STATE_EQUIVALENCE).map(([raw, row]) => (
-                <tr key={raw} className="border-b border-line last:border-b-0">
-                  <td className={`${tableCell} font-mono`}>{raw}</td>
-                  <td className={tableCell}>{row.state ? <StateBadge state={row.state} /> : <span className="text-muted">mantém o atual</span>}</td>
-                  <td className={`${tableCell} text-muted`}>{row.reason}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-        <p className="text-sm text-muted">
-          Webhook: o texto da transição (<code>$ALERT_TRANSITION</code>) é reconhecido por{" "}
-          {TRANSITION_EQUIVALENCE.map((r) => `"${r.contains}" → ${r.event}`).join(", ")}; sem transição reconhecida vale o tipo (<code>$ALERT_TYPE</code>):{" "}
-          {Object.entries(ALERT_TYPE_EQUIVALENCE).map(([k, v]) => `${k} → ${v}`).join(", ")}.
-        </p>
+        {listProviderInfo().map((p) => (
+          <Card key={p.id} className="flex flex-col gap-3 p-0">
+            <h3 className="px-4 pt-4 text-base font-semibold">{p.label}</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <caption className="sr-only">Equivalência entre os estados de {p.label} e os desta aplicação</caption>
+                <thead>
+                  <tr className="border-b border-line">
+                    <th scope="col" className={tableHead}>{p.label} · <span className="font-mono font-normal">{p.sourceField}</span></th>
+                    <th scope="col" className={tableHead}>Aqui</th>
+                    <th scope="col" className={tableHead}>Motivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {p.rows.map((row) => (
+                    <tr key={row.raw} className="border-b border-line last:border-b-0">
+                      <td className={`${tableCell} font-mono`}>{row.raw}</td>
+                      <td className={tableCell}>{row.state ? <StateBadge state={row.state} /> : <span className="text-muted">mantém o atual</span>}</td>
+                      <td className={`${tableCell} text-muted`}>{row.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ul className="list-disc space-y-1 px-4 pb-4 pl-8 text-sm text-muted">
+              <li>Autenticação do webhook: {p.auth} (segredo em <code>{p.secretEnv}</code>).</li>
+              {p.notes.map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          </Card>
+        ))}
       </section>
     </main>
   );

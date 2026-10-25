@@ -7,7 +7,7 @@ describe("buildCreatePayload", () => {
   it("monta um alerta sem remediação", () => {
     expect(buildCreatePayload(base)).toEqual({
       ok: true,
-      body: { externalId: "123", name: "Latência", application: "checkout", priority: 2, tags: ["a", "b", "c"], link: null, remediations: [] },
+      body: { provider: "datadog", externalId: "123", name: "Latência", application: "checkout", priority: 2, tags: ["a", "b", "c"], link: null, remediations: [] },
     });
   });
 

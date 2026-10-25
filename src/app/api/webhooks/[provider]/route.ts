@@ -8,15 +8,19 @@ import { database, remediationDeps, runAfterResponse } from "@/server/runtime";
 
 export const dynamic = "force-dynamic";
 
-// O provedor reentrega em 5xx (Datadog: até 5 vezes, timeout de 15 s): responder 4xx só para
+// O provedor reentrega em 5xx (Datadog: até 5 vezes, timeout de 15 s; SNS: 5xx e 429): responder 4xx só para
 // erros que reenviar não resolve (origem inválida, payload malformado) e 2xx para duplicatas.
+// Cada fonte tem o seu adaptador e o seu segredo (src/providers).
 export async function POST(request: Request, ctx: { params: Promise<{ provider: string }> }) {
   const { provider: providerId } = await ctx.params;
   const provider = getProvider(providerId);
   if (!provider) return json({ error: "unknown provider" }, 404);
   if (!provider.authenticate(request.headers)) return json({ error: "unauthorized" }, 401);
   try {
-    const event = provider.parse(await readJson(request));
+    const body = await readJson(request);
+    const handled = await provider.handshake?.(body);
+    if (handled) return json({ status: "handshake", message: handled.message });
+    const event = provider.parse(body);
     const db = database();
     const result = await ingestEvent(db, event);
     if (result.status === "duplicate") return json({ status: "duplicate" });

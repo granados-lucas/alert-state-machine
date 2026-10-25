@@ -7,7 +7,8 @@ import { STATE_META } from "@/components/alert-graph/meta";
 import { Card, linkClass, SectionTitle, tableCell, tableHead } from "@/components/ui/ui";
 import { effectiveState, weightOf } from "@/domain/application-status";
 import { isMuted } from "@/domain/mute";
-import { getDatadogApiConfig } from "@/lib/env";
+import { getProvider } from "@/providers";
+import { providerLabel } from "@/providers/catalog";
 import { resolveOverallState } from "@/providers/datadog/states";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -49,7 +50,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   const { alert, remediations, runs, audit, journeys, pendingMute } = detail;
   const muted = isMuted(alert.mutedUntil);
   const reported = alert.provider === "datadog" && alert.providerState ? resolveOverallState(alert.providerState) : null;
-  const canMute = alert.provider === "datadog" && getDatadogApiConfig() !== undefined;
+  const canMute = getProvider(alert.provider)?.control !== undefined;
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-6 lg:px-8">
@@ -74,7 +75,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
                   ))}
             </dd>
             <dt className="text-muted">Origem</dt>
-            <dd>{alert.provider} · monitor {alert.externalId}{alert.link && <> · <a className={linkClass} href={alert.link} rel="noreferrer noopener">abrir no provedor</a></>}</dd>
+            <dd>{providerLabel(alert.provider)} · monitor {alert.externalId}{alert.link && <> · <a className={linkClass} href={alert.link} rel="noreferrer noopener">abrir no provedor</a></>}</dd>
             {reported && (
               <>
                 <dt className="text-muted">Estado no Datadog</dt>

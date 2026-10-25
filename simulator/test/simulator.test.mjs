@@ -213,3 +213,23 @@ test("peso = prioridade: alert de P4/P5 só deixa âmbar e o índice é ponderad
   assert.equal(model.journeyStatus(["a", "b"]), "alert");
   assert.deepEqual(model.health(["x"]), { status: null, health: null });
 });
+
+test("outras fontes: payloads no formato de cada ferramenta e cenário falha com servidor ausente de segredos", async () => {
+  const { SOURCES, multiSourceScenario } = await import("../src/sources.mjs");
+  const alarm = { name: "a1", application: "pay", priority: 2 };
+  const sns = SOURCES.cloudwatch.payload(alarm, "alert", 1767225600000, "m1");
+  assert.equal(sns.Type, "Notification");
+  const inner = JSON.parse(sns.Message);
+  assert.equal(inner.NewStateValue, "ALARM");
+  assert.match(inner.AlarmDescription, /service:pay priority:2/);
+  assert.match(inner.StateChangeTime, /\+0000$/);
+  assert.match(SOURCES.cloudwatch.headers("s3cret-s3cret-s3cret").authorization, /^Basic /);
+  assert.equal(SOURCES.appdynamics.payload(alarm, "warn", 1, "e1").event_type, "POLICY_OPEN_WARNING");
+  assert.equal(SOURCES.appdynamics.externalId(alarm), "pay/a1");
+  assert.equal(SOURCES.generic.payload(alarm, "no_data", 1, "e1").state, "no_data");
+
+  const logs = [];
+  const problems = await multiSourceScenario({ client: {}, secrets: {}, log: (m) => logs.push(m) });
+  assert.deepEqual(problems, []);
+  assert.equal(logs.filter((m) => m.includes("skipped")).length, 3);
+});

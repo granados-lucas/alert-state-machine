@@ -92,7 +92,8 @@ describe("muteAlert", () => {
     const archived = await newAlert();
     await db.update(alerts).set({ archivedAt: new Date() }).where(eq(alerts.id, archived.id));
     await expect(muteAlert(db, archived.id, input, "bia", deps(control()))).rejects.toBeInstanceOf(ValidationError);
-    const other = await newAlert({ provider: "newrelic" });
+    const other = await newAlert();
+    await db.update(alerts).set({ provider: "newrelic" }).where(eq(alerts.id, other.id)); // fonte que deixou de existir
     await expect(muteAlert(db, other.id, input, "bia", deps(control()))).rejects.toBeInstanceOf(UnsupportedError);
     const plain = await newAlert();
     await expect(muteAlert(db, plain.id, input, "bia", deps(undefined))).rejects.toBeInstanceOf(NotConfiguredError);

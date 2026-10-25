@@ -8,6 +8,7 @@ import { startReceiver } from "./receiver.mjs";
 import { createRng } from "./rng.mjs";
 import { reconcileScenario } from "./reconcile-scenario.mjs";
 import { CALM_WEIGHTS, churn, createJourneys, healthRound, muteScenario, seed, verify } from "./scenario.mjs";
+import { multiSourceScenario } from "./sources.mjs";
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -111,6 +112,14 @@ problems.push(...muting.problems);
 const reconciling = await reconcileScenario({ client, catalog, model, fake, log, strict: !hadData });
 problems.push(...reconciling.problems);
 problems.push(...(await verify({ client, catalog, model, receiver, log, appLevel: !hadData, stillMuted: muting.stillMuted, extraUnassigned: reconciling.ghostApplications })));
+// Outras fontes: depois da verificação geral, porque criam alertas em aplicações próprias (src-<fonte>-N).
+problems.push(
+  ...(await multiSourceScenario({
+    client,
+    log,
+    secrets: { cloudwatch: process.env.CLOUDWATCH_WEBHOOK_SECRET, appdynamics: process.env.APPDYNAMICS_WEBHOOK_SECRET, generic: process.env.GENERIC_WEBHOOK_SECRET },
+  })),
+);
 await receiver.close();
 
 if (problems.length) {

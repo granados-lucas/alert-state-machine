@@ -1,6 +1,7 @@
 import type { AlertState } from "@/domain/alert-machine";
 
 export type FormValues = {
+  provider: string;
   externalId: string;
   name: string;
   application: string;
@@ -19,6 +20,7 @@ export type FormValues = {
 };
 
 export const emptyValues: FormValues = {
+  provider: "datadog",
   externalId: "",
   name: "",
   application: "",
@@ -53,6 +55,7 @@ export function buildCreatePayload(v: FormValues): { ok: true; body: unknown } |
   return {
     ok: true,
     body: {
+      provider: v.provider,
       externalId: v.externalId.trim(),
       name: v.name.trim(),
       application: v.application.trim(),

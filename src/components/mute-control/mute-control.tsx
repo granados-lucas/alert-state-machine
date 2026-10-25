@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { btnPrimary, btnSecondary, Card, field, SectionTitle } from "@/components/ui/ui";
 import { formatTime } from "@/lib/format";
+import { providerLabel } from "@/providers/catalog";
 import { cn } from "@/lib/utils";
 
 const DURATIONS = [
@@ -62,7 +63,7 @@ export function MuteControl({ alertId, provider, enabled, mute, expiredAt, pendi
     }
   }
 
-  const label = provider === "datadog" ? "Datadog" : provider;
+  const label = providerLabel(provider);
 
   return (
     <Card className="flex flex-col gap-4">

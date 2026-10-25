@@ -51,6 +51,11 @@ export interface AlertProvider {
   readonly id: string;
   /** Verifica a origem da requisição; falso = 401. */
   authenticate(headers: Headers): boolean;
+  /**
+   * Mensagens de protocolo que não são eventos (ex.: confirmação de assinatura do SNS). Devolve uma resposta
+   * quando tratou a mensagem, ou null para seguir com `parse`. Roda depois de `authenticate`.
+   */
+  handshake?(body: unknown): Promise<{ message: string } | null>;
   /** Valida e normaliza o corpo; lança ProviderPayloadError se for inválido. */
   parse(body: unknown): NormalizedEvent;
   /** Presente só quando o provedor está configurado para receber ações (credenciais de API). */

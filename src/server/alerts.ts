@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { alerts, applications, auditLog, remediations } from "@/db/schema";
+import { PROVIDER_IDS } from "@/providers/catalog";
 import type { Db } from "./db-types";
 import { ConflictError, NotFoundError } from "./errors";
 import { remediationInputSchema } from "./remediation";
@@ -8,7 +9,7 @@ import { remediationInputSchema } from "./remediation";
 const nameSchema = z.string().trim().min(1).max(200);
 
 export const createAlertSchema = z.object({
-  provider: z.string().trim().min(1).max(50).default("datadog"),
+  provider: z.enum(PROVIDER_IDS).default("datadog"),
   externalId: z.string().trim().min(1).max(200),
   name: nameSchema,
   application: z.string().trim().min(1).max(100),

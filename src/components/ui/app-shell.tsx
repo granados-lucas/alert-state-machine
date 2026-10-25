@@ -53,7 +53,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <p className="hidden px-5 pt-8 text-xs leading-relaxed text-muted lg:block">
-          Alertas do Datadog como máquina de estados, com remediação e trilha de auditoria.
+          Alertas de várias fontes (Datadog, CloudWatch, AppDynamics…) como máquina de estados, com remediação e trilha de auditoria.
         </p>
       </aside>
       <div className="min-w-0">{children}</div>

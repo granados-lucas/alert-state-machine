@@ -1,12 +1,12 @@
-import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { headerSecretAuth, WEBHOOK_SECRET_HEADER } from "../auth";
+import { applicationFromTags, parsePriority, safeHttpUrl } from "../common";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 import { createDatadogControl, type DatadogApiConfig } from "./api";
 import { createDatadogSource } from "./source";
 import { mapTransition } from "./states";
-import { applicationFromTags } from "./tags";
 
-export const DATADOG_SECRET_HEADER = "x-webhook-secret";
+export const DATADOG_SECRET_HEADER = WEBHOOK_SECRET_HEADER;
 
 // Payload configurado na integração Webhooks do Datadog (ver docs/integrations/datadog.md).
 // Variáveis `$X` do Datadog chegam como texto; números são aceitos por tolerância.
@@ -27,34 +27,18 @@ export { mapTransition };
 
 export { applicationFromTags };
 
-// O link vira href na interface: só http(s) passa.
-function safeHttpUrl(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
-const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
-
 export function createDatadogProvider(options: { secret: string | undefined; api?: DatadogApiConfig; fetch?: typeof fetch }): AlertProvider {
   return {
     id: "datadog",
     control: options.api ? createDatadogControl(options.api, options.fetch) : undefined,
     source: options.api ? createDatadogSource(options.api, options.fetch) : undefined,
-    authenticate(headers) {
-      const received = headers.get(DATADOG_SECRET_HEADER);
-      return Boolean(options.secret && received && safeEqual(received, options.secret));
-    },
+    authenticate: headerSecretAuth(options.secret),
     parse(body): NormalizedEvent {
       const parsed = payloadSchema.safeParse(body);
       if (!parsed.success) throw new ProviderPayloadError("Invalid Datadog webhook payload");
       const p = parsed.data;
       const tags = p.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
       const millis = Number(p.last_updated);
-      const priority = /^P?([1-5])$/i.exec(p.priority.trim())?.[1];
       return {
         provider: "datadog",
         externalEventId: p.event_id,
@@ -63,7 +47,7 @@ export function createDatadogProvider(options: { secret: string | undefined; api
         application: applicationFromTags(tags),
         event: mapTransition(p.transition, p.alert_type),
         occurredAt: Number.isFinite(millis) && millis > 0 ? new Date(millis) : new Date(),
-        priority: priority ? Number(priority) : null,
+        priority: parsePriority(p.priority),
         tags,
         link: safeHttpUrl(p.link),
         raw: body,

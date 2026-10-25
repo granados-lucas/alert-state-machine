@@ -12,10 +12,15 @@ src/
 │   ├── alert-machine/        # estados, eventos, transition(), listEdges(): puro, sem I/O
 │   ├── mute.ts               # regras do silêncio (prazo máximo, vigência)
 │   └── application-status.ts # saúde: cor (pior estado com rebaixamento por prioridade) e índice ponderado pelo peso = prioridade
-├── providers/                # PORTA para ferramentas de monitoramento
+├── providers/                # PORTA para ferramentas de monitoramento (uma pasta por fonte)
 │   ├── types.ts              # AlertProvider, NormalizedEvent
-│   ├── index.ts              # registro (id → adaptador)
-│   └── datadog/              # único lugar que conhece o Datadog: webhook (index.ts), mute (api.ts), listagem (source.ts), equivalência de estados (states.ts)
+│   ├── catalog.ts            # ids, rótulos e tabelas de equivalência de TODAS as fontes (dados estáticos, sem ambiente)
+│   ├── index.ts              # registro: id → adaptador, com o segredo `<ID>_WEBHOOK_SECRET` de cada fonte
+│   ├── auth.ts, common.ts    # autenticação (cabeçalho / Basic) e utilitários compartilhados dos adaptadores
+│   ├── datadog/              # webhook (index.ts), mute (api.ts), listagem (source.ts), equivalência de estados (states.ts)
+│   ├── cloudwatch/           # alarmes via assinatura HTTPS do SNS (com confirmação da assinatura)
+│   ├── appdynamics/          # ação de requisição HTTP de políticas
+│   └── generic/              # JSON canônico para qualquer outra fonte
 ├── server/                   # casos de uso; recebem o banco por parâmetro (Db)
 │   ├── ingest.ts             # webhook → transação idempotente e serializada por alerta
 │   ├── alerts.ts             # criar/atualizar/arquivar alerta, remediações (com auditoria)
@@ -39,9 +44,10 @@ Dockerfile, compose.yaml
 ## Fluxo do webhook
 
 ```text
-POST /api/webhooks/datadog
-  → provider.authenticate (header X-Webhook-Secret, tempo constante)   401 se falhar
+POST /api/webhooks/<fonte>      (datadog | cloudwatch | appdynamics | generic)
+  → provider.authenticate (segredo da fonte, tempo constante)          401 se falhar
   → readJson (limite 64 KB)                                            413 / 400
+  → provider.handshake (opcional: confirmação de assinatura do SNS)    200 "handshake"
   → provider.parse → NormalizedEvent                                   400 se inválido
   → ingestEvent (1 transação):
        INSERT webhook_events ON CONFLICT DO NOTHING   → duplicata: responde 200 "duplicate"
@@ -54,7 +60,26 @@ POST /api/webhooks/datadog
 ```
 
 - **Idempotência** pela chave única `(provider, external_event_id)`; **ordem** pelo `last_updated` do provedor; **serialização** pelo `FOR UPDATE` do alerta.
-- Erro de banco vira 500 (o Datadog reenvia, até 5 vezes). 4xx apenas quando reenviar não resolve.
+- Erro de banco vira 500 (o Datadog reenvia, até 5 vezes; o SNS, conforme a política de entrega). 4xx apenas quando reenviar não resolve.
+
+## Fontes de alertas (Datadog, CloudWatch, AppDynamics, genérica)
+
+O domínio só conhece `NormalizedEvent`; cada fonte é um adaptador em `src/providers/<id>/` que **autentica**, **interpreta** o payload e **traduz** o estado dela para os estados daqui (a tabela de equivalência é dado, mostrado na tela **Máquina de estados**). Cada fonte tem endpoint (`/api/webhooks/<id>`) e segredo próprios (`<ID>_WEBHOOK_SECRET`): vazar o de uma não permite enviar eventos como outra. A identidade de um alerta é `(fonte, ID externo)`: o mesmo número em duas fontes são alertas diferentes. Estudos e riscos: `docs/integrations/<fonte>.md`. **Nenhum adaptador foi validado contra o sistema real.**
+
+| Fonte | Autenticação | ID do alerta | Estados | Ações no provedor |
+|---|---|---|---|---|
+| Datadog | `X-Webhook-Secret` | número do monitor | `overall_state` e transição | silenciar, reconciliar |
+| CloudWatch | Basic (segredo = senha) na URL do SNS | ARN do alarme | `OK`, `ALARM`, `INSUFFICIENT_DATA` | nenhuma |
+| AppDynamics | `X-Webhook-Secret` | `aplicação/regra de saúde` | `eventType` da política | nenhuma |
+| Genérica | `X-Webhook-Secret` | `monitor_id` | `state` já canônico | nenhuma |
+
+**Adicionar uma fonte** (o domínio, a auditoria, as remediações e as telas não mudam):
+
+1. `src/providers/<id>/index.ts`: `create<Id>Provider(options)` devolvendo `AlertProvider` (`authenticate`, `parse`; `handshake` só se o protocolo tiver mensagens que não são eventos; `control`/`source` só se houver API de escrita/leitura). Reaproveite `auth.ts` e `common.ts`.
+2. `src/providers/<id>/states.ts`: tabela de equivalência (fonte → estado ou `null` = manter). Entradas inferidas devem dizer isso no `reason`.
+3. `src/providers/catalog.ts`: acrescente o id em `PROVIDER_IDS` e uma entrada em `PROVIDERS` (rótulo, variável do segredo, autenticação, linhas e notas).
+4. `src/providers/index.ts`: uma linha em `BUILDERS`. O segredo é lido de `<ID>_WEBHOOK_SECRET`.
+5. Testes do adaptador (fixtures no formato documentado), `.env.example`, `compose.yaml`, uma fonte em `simulator/src/sources.mjs` e `docs/integrations/<id>.md` (o que foi lido, o que **não** foi verificado).
 
 ## Dados
 
@@ -105,7 +130,7 @@ Um alerta pode acionar outra ferramenta ao entrar em estados escolhidos (padrão
 
 - **A aplicação só pode ser alcançada através do SSO.** Quem a alcança diretamente escolhe o próprio nome (o cabeçalho é confiável por convenção) e pode fazer tudo: criar alertas e jornadas, cadastrar remediações (chamadas de saída, limitadas pela allowlist) e **silenciar monitores no Datadog**. No compose as portas ficam em `127.0.0.1`; em outro ambiente, restrinja a rede para que só o proxy do SSO chegue.
 - O proxy deve **sobrescrever** o cabeçalho de identidade em toda requisição (nunca repassar o do cliente).
-- O webhook do Datadog (`/api/webhooks/*`) tem autenticação própria (`DATADOG_WEBHOOK_SECRET`) e deve ficar fora do SSO, já que quem chama é o Datadog.
+- Os webhooks (`/api/webhooks/*`) têm autenticação própria, um segredo por fonte (`DATADOG_WEBHOOK_SECRET`, `CLOUDWATCH_WEBHOOK_SECRET`, `APPDYNAMICS_WEBHOOK_SECRET`, `GENERIC_WEBHOOK_SECRET`), e devem ficar fora do SSO, já que quem chama são as ferramentas. A única chamada de saída que um webhook provoca é a confirmação da assinatura do SNS, restrita a `https://sns.<região>.amazonaws.com`.
 - Sem papéis: todo usuário autenticado pode operar. Papéis (leitura/operação) ficam para depois do MVP.
 
 ## Simulador do Datadog (`simulator/`)

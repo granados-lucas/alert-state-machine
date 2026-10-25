@@ -9,10 +9,15 @@ export function getLogLevel() {
   return parseEnv("LOG_LEVEL", process.env.LOG_LEVEL, logLevelSchema);
 }
 
-export function getDatadogWebhookSecret() {
-  return process.env.DATADOG_WEBHOOK_SECRET
-    ? parseEnv("DATADOG_WEBHOOK_SECRET", process.env.DATADOG_WEBHOOK_SECRET, secretSchema)
-    : undefined;
+/** Segredo do webhook de uma fonte: variável `<ID>_WEBHOOK_SECRET` (mín. 16 caracteres). Ausente = webhook desligado. */
+export function getWebhookSecret(providerId: string) {
+  const name = `${providerId.toUpperCase()}_WEBHOOK_SECRET`;
+  return process.env[name] ? parseEnv(name, process.env[name], secretSchema) : undefined;
+}
+
+/** ARNs de tópico do SNS aceitos pelo CloudWatch (separados por vírgula). Vazio = qualquer tópico que conheça o segredo. */
+export function getCloudwatchTopicArns() {
+  return (process.env.CLOUDWATCH_TOPIC_ARNS ?? "").split(",").map((arn) => arn.trim()).filter(Boolean);
 }
 
 // Lista de destinos permitidos para remediação; vazia = nenhuma chamada de saída.

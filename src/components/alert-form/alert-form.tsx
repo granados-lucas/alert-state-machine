@@ -6,7 +6,16 @@ import { ALERT_STATES } from "@/domain/alert-machine";
 import { STATE_META } from "@/components/alert-graph/meta";
 import { btnPrimary, Card, field } from "@/components/ui/ui";
 import { cn } from "@/lib/utils";
+import { listProviderInfo } from "@/providers/catalog";
 import { buildCreatePayload, emptyValues, type FormValues } from "./payload";
+
+// O que identifica o alerta em cada fonte (tem de bater com o que o adaptador extrai do evento).
+const EXTERNAL_ID_HINT: Record<string, string> = {
+  datadog: "Número do monitor.",
+  cloudwatch: "ARN do alarme (arn:aws:cloudwatch:região:conta:alarm:nome).",
+  appdynamics: "aplicação/nome da regra de saúde, como no AppDynamics.",
+  generic: "O monitor_id enviado no webhook.",
+};
 
 function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
@@ -68,13 +77,18 @@ export function AlertForm() {
     <form onSubmit={(e) => void submit(e)}>
       <Card className="flex flex-col gap-8 p-6">
         <Group title="Informações básicas">
-          <Field label="ID do monitor no provedor (Datadog)">
+          <Field label="Fonte do alerta">
+            <select className={field} value={values.provider} onChange={(e) => set("provider", e.target.value)}>
+              {listProviderInfo().map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </Field>
+          <Field label="ID do monitor na fonte" hint={EXTERNAL_ID_HINT[values.provider]}>
             <input required className={field} value={values.externalId} onChange={(e) => set("externalId", e.target.value)} />
           </Field>
           <Field label="Nome">
             <input required className={field} value={values.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
-          <Field label="Aplicação" hint="Mesmo valor da tag service: do monitor.">
+          <Field label="Aplicação" hint="Mesmo valor que a fonte informa nos eventos (no Datadog, a tag service:).">
             <input required className={field} value={values.application} onChange={(e) => set("application", e.target.value)} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">

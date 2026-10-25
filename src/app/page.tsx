@@ -34,7 +34,7 @@ export default async function Home() {
 
       {journeys.length === 0 && totalApplications === 0 ? (
         <Card className="border-dashed text-muted">
-          Nada por aqui ainda. Os alertas aparecem quando o Datadog envia o primeiro webhook ou quando você{" "}
+          Nada por aqui ainda. Os alertas aparecem quando uma fonte (Datadog, CloudWatch…) envia o primeiro webhook ou quando você{" "}
           <Link className={linkClass} href="/alerts/new">cria um alerta</Link>; depois, agrupe as aplicações em{" "}
           <Link className={linkClass} href="/journeys/new">jornadas</Link>.
         </Card>

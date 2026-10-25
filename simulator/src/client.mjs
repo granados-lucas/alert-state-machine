@@ -43,6 +43,8 @@ const admin = { "content-type": "application/json", "x-forwarded-email": "simula
         headers: { "content-type": "application/json", "x-webhook-secret": secret },
         body: raw ?? JSON.stringify(payload),
       }),
+    // Webhook de outra fonte: o corpo já vem serializado e os cabeçalhos (segredo/autenticação) são da fonte.
+    sendTo: (provider, body, headers) => call(`/api/webhooks/${provider}`, { method: "POST", headers, body }),
     applications: () => call("/api/applications", { headers: admin }),
     alertDetail: (id) => call(`/api/alerts/${id}`, { headers: admin }),
     async listAllAlerts() {

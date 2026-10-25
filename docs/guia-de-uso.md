@@ -33,14 +33,16 @@ Em produção, defina estas variáveis (nomes em `.env.example`; **nunca** versi
 | Variável | Para quê | Obrigatória |
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL | sim |
-| `DATADOG_WEBHOOK_SECRET` | segredo do webhook (≥ 16 caracteres). **Sem ele o webhook responde 401 a tudo** | sim, para receber eventos |
+| `DATADOG_WEBHOOK_SECRET` | segredo do webhook do Datadog (≥ 16 caracteres). **Sem ele o webhook responde 401 a tudo** | sim, para receber eventos do Datadog |
+| `CLOUDWATCH_WEBHOOK_SECRET`, `APPDYNAMICS_WEBHOOK_SECRET`, `GENERIC_WEBHOOK_SECRET` | um segredo por fonte (≥ 16 caracteres); sem o segredo, o webhook da fonte responde 401 (ver seção 4.6) | só para as fontes usadas |
+| `CLOUDWATCH_TOPIC_ARNS` | ARNs de tópico do SNS aceitos (separados por vírgula); vazio = qualquer tópico que conheça o segredo | não |
 | `AUTH_USER_HEADER` | cabeçalho com a identidade do usuário, preenchido pelo SSO (padrão `x-forwarded-email`); só alimenta a auditoria | recomendada |
 | `DD_API_KEY`, `DD_APP_KEY` | chaves da API do Datadog (silenciar e reconciliar) | só para essas funções |
 | `DD_SITE` | site do Datadog: `datadoghq.com` (padrão), `datadoghq.eu`, `us3.datadoghq.com`, `us5.datadoghq.com`, `ap1.datadoghq.com`, `ap2.datadoghq.com`, `uk1.datadoghq.com`, `ddog-gov.com`, `us2.ddog-gov.com` | só com as chaves |
 | `DD_API_BASE_URL` | substitui o destino da API (testes). **Deixe vazio no uso real**: no `compose.yaml` o padrão aponta para o Datadog *simulado* | não |
 | `REMEDIATION_ALLOWED_HOSTS` | destinos permitidos para remediação (`host` ou `host:porta`, separados por vírgula). Vazio = nenhuma remediação sai | só com remediação |
 
-**Segurança de implantação (importante):** a aplicação **não tem login**; o SSO corporativo deve ficar na frente e preencher o cabeçalho de identidade. Ela só pode ser alcançada através do SSO. A rota `/api/webhooks/*` precisa ficar **fora** do SSO (quem chama é o Datadog) e é protegida pelo `DATADOG_WEBHOOK_SECRET`. Detalhes em `docs/architecture.md`.
+**Segurança de implantação (importante):** a aplicação **não tem login**; o SSO corporativo deve ficar na frente e preencher o cabeçalho de identidade. Ela só pode ser alcançada através do SSO. A rota `/api/webhooks/*` precisa ficar **fora** do SSO (quem chama é o Datadog) e é protegida por um segredo próprio de cada fonte (`<FONTE>_WEBHOOK_SECRET`). Detalhes em `docs/architecture.md`.
 
 ## 3. Criar alertas
 
@@ -177,6 +179,19 @@ Resposta esperada: `200 {"status":"applied","alertId":…,"state":"alert"}`. Rep
 
 > ⚠ **Aspas no nome do monitor.** A documentação do Datadog não diz se ele escapa aspas e barras nos valores do payload. Um nome de monitor com `"` pode gerar JSON inválido: a aplicação responde 400, o Datadog **não** reenvia (4xx) e o evento se perde. Evite aspas em nomes de monitores e use a reconciliação (seção 7) como rede de segurança.
 
+### 4.6 Outras fontes além do Datadog
+
+O mesmo mapa recebe alertas de **Amazon CloudWatch**, **AppDynamics** e de qualquer ferramenta pelo formato **genérico**. Cada fonte tem endpoint e segredo próprios; a seção 4.1 a 4.5 vale para o Datadog e o resto muda só em como a fonte é configurada:
+
+| Fonte | Endpoint | Como autentica | Guia |
+|---|---|---|---|
+| Datadog | `/api/webhooks/datadog` | cabeçalho `X-Webhook-Secret` | `docs/integrations/datadog.md` |
+| CloudWatch | `/api/webhooks/cloudwatch` | assinatura HTTPS do SNS com `https://sns:<segredo>@host/...` | `docs/integrations/cloudwatch.md` |
+| AppDynamics | `/api/webhooks/appdynamics` | cabeçalho `X-Webhook-Secret` na ação HTTP | `docs/integrations/appdynamics.md` |
+| Genérica | `/api/webhooks/generic` | cabeçalho `X-Webhook-Secret` | `docs/integrations/generic.md` |
+
+No cadastro manual (**Novo alerta**) escolha a **fonte**; o ID do monitor depende dela (número no Datadog, ARN no CloudWatch, `aplicação/regra` no AppDynamics). O mesmo ID em fontes diferentes são alertas diferentes. A tela **Máquina de estados** mostra como cada fonte é traduzida para os estados daqui. Silenciar e reconciliar só existem para o Datadog. ⚠ Os adaptadores novos foram escritos a partir da documentação e **não foram testados com as ferramentas reais**.
+
 ## 5. Organizar: aplicações e jornadas
 
 - A **aplicação** é criada automaticamente a partir da tag `service:`.
@@ -254,7 +269,7 @@ Pré-requisito: `DD_API_KEY`, `DD_APP_KEY` (e `DD_SITE`) configurados e `DD_API_
 
 ## 10. Referências
 
-- `docs/integrations/datadog.md`: estudo da API do Datadog, equivalência de estados, limites de uso e o que **não** foi verificado.
+- `docs/integrations/datadog.md`, `cloudwatch.md`, `appdynamics.md`, `generic.md`: estudo de cada fonte, equivalência de estados, limites e o que **não** foi verificado.
 - `docs/architecture.md`: arquitetura, auditoria e segurança (SSO, remediação).
 - `README.md`: Docker, simulador, modo demonstração e reconciliação periódica.
 - `PRODUCT.md`: escopo, premissas e pendências.

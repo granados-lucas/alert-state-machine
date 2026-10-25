@@ -12,7 +12,7 @@ Sistema interno da empresa. Usuários: pessoas de engenharia/operação que acom
 
 ## Fluxos (implementados)
 
-1. **Receber webhook do Datadog** (`POST /api/webhooks/datadog`): autentica a origem, normaliza o payload, ignora duplicatas, descarta eventos antigos, aplica a transição, grava histórico e responde rápido.
+1. **Receber webhook de várias fontes** (`POST /api/webhooks/<fonte>`: Datadog, Amazon CloudWatch via SNS, AppDynamics e genérica): autentica a origem com o segredo da fonte, normaliza o payload, ignora duplicatas, descarta eventos antigos, aplica a transição, grava histórico e responde rápido.
 2. **Mapa de jornadas** (`/`): uma **jornada** é um fluxo de negócio (ex.: "Compra") formado por várias aplicações; **uma aplicação pode fazer parte de mais de uma jornada**. Cada aplicação assume o pior estado entre seus alertas ativos e cada jornada assume o pior estado entre as aplicações dela: se um alerta de prioridade P1 a P3 (ou sem prioridade) de uma aplicação da jornada estiver em Alerta, a aplicação e a jornada ficam vermelhas, e a mesma aplicação aparece vermelha em todas as jornadas de que participa. **O peso do alerta é a sua prioridade**: um alerta de P4 ou P5 em Alerta deixa o item só âmbar (rebaixamento) e todo item exibe um **índice de saúde** de 0 a 100%, ponderado pela prioridade (P1 pesa mais que vários P5). Aplicações que ainda não estão em nenhuma jornada aparecem num grupo "Sem jornada" (nada some do mapa). Passar o cursor numa aplicação destaca a mesma aplicação nas outras jornadas. Há também a lista equivalente e o filtro "só jornadas com alerta ou aviso".
 3. **Jornadas** (`/journeys/[id]`, `/journeys/new`, `/journeys/[id]/edit`, `/api/journeys`): criar, editar nome/descrição, trocar as aplicações e remover; o detalhe mostra as aplicações e os alertas da jornada, dos mais graves para os menos graves. Toda alteração é auditada.
 4. **Alertas** (`/alerts`, `/alerts/[id]`): lista filtrável com paginação; detalhe com estado, remediações, execuções e a linha do tempo de auditoria.
@@ -28,7 +28,7 @@ Sistema interno da empresa. Usuários: pessoas de engenharia/operação que acom
 - Criar, editar ou excluir monitores no Datadog (o cadastro daqui não cria o monitor lá). Único acesso de escrita ao Datadog: silenciar e reativar.
 - Notificações (e-mail, Slack, pager) e escalonamento.
 - Reconhecer alertas (acknowledge) e agendar silêncios futuros ou recorrentes (Downtimes v2).
-- Mais de um provedor ao mesmo tempo (a abstração está pronta; o segundo adaptador não existe).
+- Silenciar e reconciliar fora do Datadog: as outras fontes (CloudWatch, AppDynamics, genérica) só enviam eventos por webhook, e a verificação da assinatura das mensagens do SNS não existe (ver `docs/integrations/`).
 - Dependências entre aplicações (substituídas por jornadas, decisão do solicitante em 2026-10-24).
 - Jornada por alerta: a jornada é definida por aplicação; um alerta pertence às jornadas da sua aplicação.
 
