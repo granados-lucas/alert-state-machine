@@ -15,8 +15,8 @@ beforeAll(async () => {
 afterAll(() => close());
 
 const providers: ProviderStatus[] = [
-  { id: "datadog", webhook: true, control: true, source: true },
-  { id: "cloudwatch", webhook: false, control: false, source: false },
+  { id: "datadog", control: true, source: true },
+  { id: "cloudwatch", control: false, source: false },
 ];
 const info = { version: "9.9.9", startedAt: new Date("2026-03-01T10:00:00Z"), now: new Date("2026-03-01T10:10:00Z") };
 
@@ -64,7 +64,7 @@ describe("readTelemetry", () => {
 
 describe("toGauges", () => {
   it("publica versão, banco, alertas, último evento por fonte, silêncios e pool", async () => {
-    const t = await readTelemetry(db, { providers, pool: { total: 3, idle: 2, waiting: 1 } });
+    const t = await readTelemetry(db, { providers, webhookEnabled: true, pool: { total: 3, idle: 2, waiting: 1 } });
     const text = renderPrometheus(toGauges(t, info));
     expect(text).toContain(`${PREFIX}build_info{version="9.9.9"} 1`);
     expect(text).toContain(`${PREFIX}process_uptime_seconds 600`);
@@ -72,7 +72,7 @@ describe("toGauges", () => {
     expect(text).toMatch(new RegExp(`${PREFIX}alerts\\{state="alert"\\} \\d+`));
     expect(text).toContain(`${PREFIX}last_event_timestamp_seconds{provider="datadog"} ${Math.floor(Date.parse("2026-03-01T09:01:00Z") / 1000)}`);
     expect(text).toContain(`${PREFIX}last_event_timestamp_seconds{provider="cloudwatch"} 0`);
-    expect(text).toContain(`${PREFIX}provider_webhook_enabled{provider="cloudwatch"} 0`);
+    expect(text).toContain(`${PREFIX}webhook_enabled 1`);
     expect(text).toContain(`${PREFIX}mute_operations_pending 1`);
     expect(text).toContain(`${PREFIX}mute_operations_oldest_pending_seconds 2400`);
     expect(text).toContain(`${PREFIX}database_pool_connections{state="waiting"} 1`);
@@ -83,6 +83,7 @@ describe("toGauges", () => {
     const t = await readTelemetry(undefined, { providers });
     const text = renderPrometheus(toGauges(t, info));
     expect(text).toContain(`${PREFIX}database_up 0`);
+    expect(text).toContain(`${PREFIX}webhook_enabled 0`);
     expect(text).not.toContain("database_latency_seconds ");
     expect(text).not.toContain("database_pool_connections{");
   });

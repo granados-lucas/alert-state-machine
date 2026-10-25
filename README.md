@@ -49,7 +49,7 @@ pnpm check        # lint, tipos, regras, testes com cobertura, testes do simulad
 | Máquina de estados | `/graph` |
 | Silenciar/reativar o monitor no Datadog | botão na página do alerta; `POST /api/alerts/[id]/mute` e `/unmute` ([detalhes](docs/integrations/datadog.md#silenciar-monitores-pela-api-ação-da-aplicação-no-datadog)) |
 | Reconciliação com o Datadog (tela, API e script) | `/reconciliation`; `POST /api/reconciliation`; `scripts/reconcile.mjs` ([detalhes](docs/integrations/datadog.md#reconciliação-listar-monitores-e-respeitar-o-limite-de-uso)) |
-| Webhook do Datadog | `POST /api/webhooks/datadog` ([como configurar](docs/integrations/datadog.md)) |
+| Webhook (único, qualquer ferramenta) | `POST /api/webhooks` com `"source"` no corpo ([Datadog](docs/integrations/datadog.md), [CloudWatch](docs/integrations/cloudwatch.md), [AppDynamics](docs/integrations/appdynamics.md), [genérico](docs/integrations/generic.md)) |
 | API de gestão (sem token: a autenticação é do SSO na frente; identidade em `AUTH_USER_HEADER`) | `/api/alerts`, `/api/alerts/[id]`, `/api/alerts/[id]/remediations`, `/api/applications`, `/api/journeys`, `/api/journeys/[id]`, `/api/journeys/[id]/applications` |
 
 ## Documentação

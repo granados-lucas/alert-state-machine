@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { eventTo } from "@/domain/alert-machine";
-import { headerSecretAuth } from "../auth";
 import { parsePriority, parseTime, safeHttpUrl, unresolved } from "../common";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 import { EVENT_TYPE_EQUIVALENCE } from "./states";
@@ -24,10 +23,9 @@ const payloadSchema = z.object({
 
 const clean = (value: string) => (unresolved(value) ? "" : value.trim());
 
-export function createAppdynamicsProvider(options: { secret: string | undefined }): AlertProvider {
+export function createAppdynamicsProvider(): AlertProvider {
   return {
     id: "appdynamics",
-    authenticate: headerSecretAuth(options.secret),
     parse(body): NormalizedEvent {
       const parsed = payloadSchema.safeParse(body);
       if (!parsed.success) throw new ProviderPayloadError("Invalid AppDynamics webhook payload");

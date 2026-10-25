@@ -13,9 +13,9 @@ vi.mock("@/lib/logger", () => {
   return { logger };
 });
 
-const SECRET = "datadog-secret-0123456789";
+const SECRET = "webhook-secret-0123456789";
 
-const webhook = await import("./webhooks/[provider]/route");
+const webhook = await import("./webhooks/route");
 const health = await import("./health/route");
 const alertsRoute = await import("./alerts/route");
 const alertRoute = await import("./alerts/[id]/route");
@@ -34,7 +34,7 @@ const journeyAppsRoute = await import("./journeys/[id]/applications/route");
 
 beforeAll(async () => {
   ({ db, close } = await createTestDb());
-  vi.stubEnv("DATADOG_WEBHOOK_SECRET", SECRET);
+  vi.stubEnv("WEBHOOK_SECRET", SECRET);
   vi.stubEnv("REMEDIATION_ALLOWED_HOSTS", "hooks.test");
   vi.stubEnv("LOG_LEVEL", "silent");
 });
@@ -50,6 +50,7 @@ const ctx = <T extends Record<string, string>>(params: T) => ({ params: Promise.
 const post = (body: unknown, headers: Record<string, string> = admin) => ({ method: "POST", headers, body: JSON.stringify(body) });
 let n = 100;
 const dd = (over: Record<string, unknown> = {}) => ({
+  source: "datadog",
   event_id: String(++n),
   monitor_id: "900",
   monitor_name: "Erros 5xx",
@@ -62,15 +63,15 @@ const dd = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const sendWebhook = (body: unknown, headers: Record<string, string> = { "x-webhook-secret": SECRET }) =>
-  webhook.POST(req("/api/webhooks/datadog", { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) }), ctx({ provider: "datadog" }));
+  webhook.POST(req("/api/webhooks", { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) }));
 
-describe("POST /api/webhooks/[provider]", () => {
-  it("rejeita provedor desconhecido (404), origem inválida (401), JSON inválido e payload inválido (400)", async () => {
-    expect((await webhook.POST(req("/x", { method: "POST" }), ctx({ provider: "newrelic" }))).status).toBe(404);
+describe("POST /api/webhooks (webhook único)", () => {
+  it("rejeita origem inválida (401), fonte desconhecida, JSON inválido e payload inválido (400)", async () => {
+    expect((await sendWebhook(dd({ source: "newrelic" }))).status).toBe(400);
     expect((await sendWebhook(dd(), { "x-webhook-secret": "errado-errado-errado" })).status).toBe(401);
     expect((await sendWebhook(dd(), {})).status).toBe(401);
     expect((await sendWebhook("{nao json")).status).toBe(400);
-    expect((await sendWebhook({ monitor_id: "1" })).status).toBe(400);
+    expect((await sendWebhook({ source: "datadog", monitor_id: "1" })).status).toBe(400);
   });
 
   it("recusa corpo grande demais (413)", async () => {
@@ -255,13 +256,14 @@ describe("observabilidade da aplicação", () => {
   it("/api/metrics conta os webhooks por fonte e resultado e publica o estado do banco", async () => {
     await sendWebhook(dd()); // applied
     await sendWebhook(dd(), { "x-webhook-secret": "errado-errado-errado" }); // unauthorized
-    await sendWebhook({ monitor_id: "1" }); // invalid
+    await sendWebhook({ source: "datadog", monitor_id: "1" }); // invalid
     const response = await (await metricsRoute()).GET();
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/plain");
     const text = await response.text();
     expect(text).toMatch(/global_alerts_webhook_requests_total\{provider="datadog",outcome="(applied|unchanged)"\} \d+/);
-    expect(text).toMatch(/global_alerts_webhook_requests_total\{provider="datadog",outcome="unauthorized"\} [1-9]/);
+    // A autenticação vem antes de ler o corpo: a fonte ainda é desconhecida (e não é escolhida por quem não se autenticou).
+    expect(text).toMatch(/global_alerts_webhook_requests_total\{provider="unknown",outcome="unauthorized"\} [1-9]/);
     expect(text).toMatch(/global_alerts_webhook_requests_total\{provider="datadog",outcome="invalid"\} [1-9]/);
     expect(text).toMatch(/global_alerts_webhook_duration_seconds_count\{provider="datadog"\} [1-9]/);
     expect(text).toContain("global_alerts_database_up 1");
@@ -270,41 +272,50 @@ describe("observabilidade da aplicação", () => {
   });
 
   it("fonte desconhecida não cria rótulo novo (a cardinalidade é fixa)", async () => {
-    await webhook.POST(req("/x", { method: "POST" }), ctx({ provider: "qualquer-coisa-12345" }));
+    expect((await sendWebhook(dd({ source: "qualquer-coisa-12345" }))).status).toBe(400);
     const text = await (await (await metricsRoute()).GET()).text();
-    expect(text).toContain('provider="unknown",outcome="unknown_provider"');
+    expect(text).toContain('provider="unknown",outcome="unknown_source"');
     expect(text).not.toContain("qualquer-coisa-12345");
   });
 });
 
-describe("várias fontes de alertas", () => {
-  const SECRETS = { generic: "generic-secret-0123456789", cloudwatch: "cloudwatch-secret-0123456789", appdynamics: "appd-secret-0123456789" };
-  beforeAll(() => {
-    vi.stubEnv("GENERIC_WEBHOOK_SECRET", SECRETS.generic);
-    vi.stubEnv("CLOUDWATCH_WEBHOOK_SECRET", SECRETS.cloudwatch);
-    vi.stubEnv("APPDYNAMICS_WEBHOOK_SECRET", SECRETS.appdynamics);
-  });
-  const send = (provider: string, body: unknown, headers: Record<string, string>) =>
-    webhook.POST(req(`/api/webhooks/${provider}`, { method: "POST", headers, body: JSON.stringify(body) }), ctx({ provider }));
-  const generic = (over: Record<string, unknown> = {}) => ({ event_id: `g${++n}`, monitor_id: "900", monitor_name: "Genérico", state: "alert", application: "multi-src", priority: "P1", ...over });
-  const basic = (secret: string) => ({ authorization: `Basic ${Buffer.from(`sns:${secret}`).toString("base64")}` });
+describe("várias fontes no mesmo webhook", () => {
+  const header = { "x-webhook-secret": SECRET };
+  const send = (body: unknown, headers: Record<string, string> = header) => sendWebhook(body, headers);
+  const generic = (over: Record<string, unknown> = {}) => ({ source: "generic", event_id: `g${++n}`, monitor_id: "900", monitor_name: "Genérico", state: "alert", application: "multi-src", priority: "P1", ...over });
+  const basic = (secret = SECRET) => ({ authorization: `Basic ${Buffer.from(`sns:${secret}`).toString("base64")}` });
   const alarm = (over: Record<string, unknown> = {}) => ({
     Type: "Notification", MessageId: `sns-${++n}`, TopicArn: "arn:aws:sns:us-east-1:123456789012:t",
     Message: JSON.stringify({ AlarmName: "Latência", AlarmDescription: "service:multi-src priority:1", AlarmArn: "arn:aws:cloudwatch:us-east-1:123456789012:alarm:Latência", NewStateValue: "ALARM" }),
     ...over,
   });
 
-  it("cada fonte tem o seu segredo: o de uma não vale para outra", async () => {
-    expect((await send("generic", generic(), { "x-webhook-secret": SECRET })).status).toBe(401); // segredo do Datadog
-    expect((await send("generic", generic(), { "x-webhook-secret": SECRETS.cloudwatch })).status).toBe(401);
-    expect((await sendWebhook(dd(), { "x-webhook-secret": SECRETS.generic })).status).toBe(401);
-    expect((await send("cloudwatch", alarm(), { "x-webhook-secret": SECRETS.cloudwatch })).status).toBe(401); // SNS só fala Basic
-    expect((await send("appdynamics", {}, {})).status).toBe(401);
+  it("um segredo só vale para todas as fontes, por cabeçalho ou por Basic (SNS); sem ele ou errado, 401", async () => {
+    expect((await send(generic())).status).toBe(200);
+    expect((await send(generic(), basic())).status).toBe(200);
+    expect((await send(alarm(), basic())).status).toBe(200);
+    expect((await send(generic(), { "x-webhook-secret": "outro-segredo-0123456789" })).status).toBe(401);
+    expect((await send(alarm(), basic("outro-segredo-0123456789"))).status).toBe(401);
+    expect((await send(generic(), {})).status).toBe(401);
+  });
+
+  it("sem WEBHOOK_SECRET configurado o webhook responde 401 a tudo", async () => {
+    vi.stubEnv("WEBHOOK_SECRET", "");
+    expect((await send(generic())).status).toBe(401);
+    vi.stubEnv("WEBHOOK_SECRET", SECRET);
+  });
+
+  it("trocar de ferramenta é só mudar o campo source: a mesma URL e o mesmo segredo", async () => {
+    const same = { event_id: `s${++n}`, monitor_id: "troca-1", monitor_name: "Troca", application: "multi-src" };
+    const asGeneric = await (await send({ ...same, source: "generic", state: "alert" })).json();
+    expect(asGeneric.state).toBe("alert");
+    const asDatadog = await (await send({ ...same, event_id: `s${++n}`, source: "datadog", transition: "Recovered", alert_type: "success", tags: "service:multi-src" })).json();
+    expect(asDatadog.alertId).not.toBe(asGeneric.alertId); // fontes diferentes: alertas diferentes
   });
 
   it("o mesmo ID de monitor em fontes diferentes são alertas diferentes", async () => {
     const fromDatadog = await (await sendWebhook(dd({ monitor_id: "900" }))).json();
-    const fromGeneric = await (await send("generic", generic(), { "x-webhook-secret": SECRETS.generic })).json();
+    const fromGeneric = await (await send(generic())).json();
     expect(fromGeneric).toMatchObject({ status: expect.stringMatching(/applied|unchanged|created/), state: "alert" });
     expect(fromGeneric.alertId).not.toBe(fromDatadog.alertId);
     const detail = await (await alertRoute.GET(req("/x", { headers: admin }), ctx({ id: String(fromGeneric.alertId) }))).json();
@@ -314,28 +325,28 @@ describe("várias fontes de alertas", () => {
   it("CloudWatch: confirma a assinatura do SNS e depois aplica o alarme", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    const handshake = await send("cloudwatch", { Type: "SubscriptionConfirmation", MessageId: "c1", TopicArn: "arn:aws:sns:us-east-1:123456789012:t", SubscribeURL: "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&Token=x" }, basic(SECRETS.cloudwatch));
+    const handshake = await send({ Type: "SubscriptionConfirmation", MessageId: "c1", TopicArn: "arn:aws:sns:us-east-1:123456789012:t", SubscribeURL: "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&Token=x" }, basic());
     expect(handshake.status).toBe(200);
     expect(await handshake.json()).toEqual({ status: "handshake", message: "subscription confirmed" });
     expect(fetchMock).toHaveBeenCalledOnce();
 
-    const first = await send("cloudwatch", alarm(), basic(SECRETS.cloudwatch));
+    const first = await send(alarm(), basic());
     expect(first.status).toBe(200);
     expect(await first.json()).toMatchObject({ state: "alert" });
-    const hostile = await send("cloudwatch", { Type: "SubscriptionConfirmation", MessageId: "c2", SubscribeURL: "http://169.254.169.254/latest" }, basic(SECRETS.cloudwatch));
+    const hostile = await send({ Type: "SubscriptionConfirmation", MessageId: "c2", TopicArn: "arn:aws:sns:us-east-1:123456789012:t", SubscribeURL: "http://169.254.169.254/latest" }, basic());
     expect(hostile.status).toBe(400);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("CloudWatch: reentrega do mesmo MessageId é duplicata", async () => {
     const body = alarm();
-    expect((await send("cloudwatch", body, basic(SECRETS.cloudwatch))).status).toBe(200);
-    expect(await (await send("cloudwatch", body, basic(SECRETS.cloudwatch))).json()).toEqual({ status: "duplicate" });
+    expect((await send(body, basic())).status).toBe(200);
+    expect(await (await send(body, basic())).json()).toEqual({ status: "duplicate" });
   });
 
   it("AppDynamics: aplica o evento da política", async () => {
-    const body = { event_id: `a${++n}`, event_type: "POLICY_OPEN_WARNING", application: "multi-src", health_rule: "CPU", policy: "P", priority: "2" };
-    const response = await send("appdynamics", body, { "x-webhook-secret": SECRETS.appdynamics });
+    const body = { source: "appdynamics", event_id: `a${++n}`, event_type: "POLICY_OPEN_WARNING", application: "multi-src", health_rule: "CPU", policy: "P", priority: "2" };
+    const response = await send(body);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ state: "warn" });
   });

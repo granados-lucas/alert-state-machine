@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { eventTo, ALERT_STATES } from "@/domain/alert-machine";
-import { headerSecretAuth } from "../auth";
 import { applicationFromTags, parsePriority, parseTime, safeHttpUrl } from "../common";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 
@@ -18,10 +17,9 @@ const payloadSchema = z.object({
   link: z.string().optional(),
 });
 
-export function createGenericProvider(options: { secret: string | undefined }): AlertProvider {
+export function createGenericProvider(): AlertProvider {
   return {
     id: "generic",
-    authenticate: headerSecretAuth(options.secret),
     parse(body): NormalizedEvent {
       const parsed = payloadSchema.safeParse(body);
       if (!parsed.success) throw new ProviderPayloadError("Invalid generic webhook payload");

@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ProviderPayloadError } from "../types";
 import { applicationFromTags, createDatadogProvider, mapTransition } from "./index";
 
-const SECRET = "datadog-secret-0123456789";
-const provider = createDatadogProvider({ secret: SECRET });
+const provider = createDatadogProvider({});
 const base = {
   event_id: "8001",
   monitor_id: 42,
@@ -15,21 +14,6 @@ const base = {
   last_updated: "1767225600000",
   link: "https://app.datadoghq.com/monitors/42",
 };
-
-describe("authenticate", () => {
-  it("aceita apenas o segredo correto", () => {
-    expect(provider.authenticate(new Headers({ "x-webhook-secret": SECRET }))).toBe(true);
-    expect(provider.authenticate(new Headers({ "x-webhook-secret": "wrong-secret-0123456789" }))).toBe(false);
-    expect(provider.authenticate(new Headers({ "x-webhook-secret": "short" }))).toBe(false);
-    expect(provider.authenticate(new Headers())).toBe(false);
-  });
-
-  it("nega tudo quando o segredo não está configurado", () => {
-    const open = createDatadogProvider({ secret: undefined });
-    expect(open.authenticate(new Headers({ "x-webhook-secret": "" }))).toBe(false);
-    expect(open.authenticate(new Headers({ "x-webhook-secret": "anything" }))).toBe(false);
-  });
-});
 
 describe("parse", () => {
   it("normaliza o payload do Datadog", () => {

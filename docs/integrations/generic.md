@@ -2,10 +2,11 @@
 
 Para qualquer ferramenta sem adaptador: um script, um proxy do Alertmanager, um sistema interno. O remetente já informa o **estado equivalente** (`ok`, `warn`, `alert`, `no_data`).
 
-`POST /api/webhooks/generic` com o cabeçalho `X-Webhook-Secret: <GENERIC_WEBHOOK_SECRET>` (≥ 16 caracteres):
+`POST /api/webhooks` com o cabeçalho `X-Webhook-Secret: <WEBHOOK_SECRET>` (o mesmo segredo de todas as ferramentas):
 
 ```json
 {
+  "source": "generic",
   "event_id": "evento-0001",
   "monitor_id": "fila-pagamentos-cheia",
   "monitor_name": "Fila de pagamentos cheia",
@@ -20,6 +21,7 @@ Para qualquer ferramenta sem adaptador: um script, um proxy do Alertmanager, um 
 
 | Campo | Regra |
 |---|---|
+| `source` | `generic`; pode ser omitido (corpo sem `source` é tratado como genérico) |
 | `event_id` | **obrigatório**; chave de idempotência (repetir responde `duplicate`) |
 | `monitor_id`, `monitor_name` | **obrigatórios**; o ID identifica o alerta |
 | `state` | **obrigatório**: `ok`, `warn`, `alert` ou `no_data` |
@@ -31,9 +33,9 @@ Para qualquer ferramenta sem adaptador: um script, um proxy do Alertmanager, um 
 Exemplo:
 
 ```bash
-curl -X POST http://localhost:3000/api/webhooks/generic \
-  -H "x-webhook-secret: $GENERIC_WEBHOOK_SECRET" -H "content-type: application/json" \
-  -d '{"event_id":"e1","monitor_id":"m1","monitor_name":"Teste","state":"alert","application":"demo"}'
+curl -X POST http://localhost:3000/api/webhooks \
+  -H "x-webhook-secret: $WEBHOOK_SECRET" -H "content-type: application/json" \
+  -d '{"source":"generic","event_id":"e1","monitor_id":"m1","monitor_name":"Teste","state":"alert","application":"demo"}'
 ```
 
 Sem reconciliação nem silenciamento (não há API de origem). Os formatos de resposta são os de `docs/guia-de-uso.md`, seção 4.5.

@@ -1,6 +1,6 @@
 import "server-only";
 import { poolStats } from "@/db";
-import { providerStatus } from "@/providers";
+import { providerStatus, webhookEnabled } from "@/providers";
 import { database } from "./runtime";
 import { readTelemetry } from "./telemetry";
 
@@ -21,5 +21,5 @@ export function currentTelemetry() {
   } catch {
     db = undefined; // DATABASE_URL ausente ou inválida
   }
-  return readTelemetry(db, { providers: providerStatus(), pool: poolStats() });
+  return readTelemetry(db, { providers: providerStatus(), webhookEnabled: webhookEnabled(), pool: poolStats() });
 }

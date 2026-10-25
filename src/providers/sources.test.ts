@@ -2,30 +2,48 @@ import { describe, expect, it, vi } from "vitest";
 import { ProviderApiError, ProviderPayloadError } from "./types";
 import { createAppdynamicsProvider } from "./appdynamics";
 import { EVENT_TYPE_EQUIVALENCE } from "./appdynamics/states";
-import { basicPasswordAuth, headerSecretAuth } from "./auth";
-import { listProviderInfo, PROVIDER_IDS, providerLabel } from "./catalog";
+import { authenticateWebhook } from "./auth";
+import { listProviderInfo, PROVIDER_IDS, providerLabel, sourceOf } from "./catalog";
 import { createCloudwatchProvider } from "./cloudwatch";
 import { createGenericProvider } from "./generic";
 import { parsePriority, parseTime, unresolved } from "./common";
 
 const SECRET = "fonte-secret-0123456789";
 
-describe("autenticação", () => {
+describe("autenticação do webhook único", () => {
+  const auth = authenticateWebhook(SECRET);
   it("cabeçalho: só o segredo exato; sem segredo configurado nega tudo", () => {
-    expect(headerSecretAuth(SECRET)(new Headers({ "x-webhook-secret": SECRET }))).toBe(true);
-    expect(headerSecretAuth(SECRET)(new Headers({ "x-webhook-secret": "outro-secret-0123456789" }))).toBe(false);
-    expect(headerSecretAuth(undefined)(new Headers({ "x-webhook-secret": "" }))).toBe(false);
+    expect(auth(new Headers({ "x-webhook-secret": SECRET }))).toBe(true);
+    expect(auth(new Headers({ "x-webhook-secret": "outro-secret-0123456789" }))).toBe(false);
+    expect(auth(new Headers({ "x-webhook-secret": "curto" }))).toBe(false);
+    expect(auth(new Headers())).toBe(false);
+    expect(authenticateWebhook(undefined)(new Headers({ "x-webhook-secret": "" }))).toBe(false);
+    expect(authenticateWebhook(undefined)(new Headers({ "x-webhook-secret": "qualquer" }))).toBe(false);
   });
 
   it("Basic: o segredo é a senha, o usuário é ignorado", () => {
     const basic = (user: string, pass: string) => new Headers({ authorization: `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}` });
-    expect(basicPasswordAuth(SECRET)(basic("sns", SECRET))).toBe(true);
-    expect(basicPasswordAuth(SECRET)(basic("qualquer", SECRET))).toBe(true);
-    expect(basicPasswordAuth(SECRET)(basic("sns", "errada-errada-errada"))).toBe(false);
-    expect(basicPasswordAuth(SECRET)(new Headers({ authorization: `Basic ${Buffer.from(SECRET).toString("base64")}` }))).toBe(false); // sem ":"
-    expect(basicPasswordAuth(SECRET)(new Headers({ authorization: `Bearer ${SECRET}` }))).toBe(false);
-    expect(basicPasswordAuth(SECRET)(new Headers())).toBe(false);
-    expect(basicPasswordAuth(undefined)(basic("sns", ""))).toBe(false);
+    expect(auth(basic("sns", SECRET))).toBe(true);
+    expect(auth(basic("qualquer", SECRET))).toBe(true);
+    expect(auth(basic("sns", "errada-errada-errada"))).toBe(false);
+    expect(auth(new Headers({ authorization: `Basic ${Buffer.from(SECRET).toString("base64")}` }))).toBe(false); // sem ":"
+    expect(auth(new Headers({ authorization: `Bearer ${SECRET}` }))).toBe(false);
+    expect(authenticateWebhook(undefined)(basic("sns", ""))).toBe(false);
+  });
+});
+
+describe("identificação da fonte (sourceOf)", () => {
+  it("usa o campo source; o envelope do SNS é CloudWatch; sem nada é genérico; valor desconhecido é recusado", () => {
+    expect(sourceOf({ source: "datadog" })).toBe("datadog");
+    expect(sourceOf({ source: "appdynamics" })).toBe("appdynamics");
+    expect(sourceOf({ Type: "Notification", TopicArn: "arn:aws:sns:x" })).toBe("cloudwatch");
+    expect(sourceOf({ Type: "Notification" })).toBe("generic"); // sem TopicArn não é o envelope do SNS
+    expect(sourceOf({ event_id: "1" })).toBe("generic");
+    expect(sourceOf("texto")).toBe("generic");
+    expect(sourceOf(null)).toBe("generic");
+    expect(sourceOf({ source: "newrelic" })).toBeUndefined();
+    expect(sourceOf({ source: 7 })).toBeUndefined();
+    expect(sourceOf({ source: "constructor" })).toBeUndefined();
   });
 });
 
@@ -40,10 +58,9 @@ describe("utilitários", () => {
 });
 
 describe("catálogo", () => {
-  it("toda fonte registrada tem rótulo, segredo próprio e tabela de equivalência", () => {
+  it("toda fonte registrada tem rótulo e tabela de equivalência", () => {
     const info = listProviderInfo();
     expect(info.map((p) => p.id)).toEqual([...PROVIDER_IDS]);
-    expect(new Set(info.map((p) => p.secretEnv)).size).toBe(info.length);
     for (const p of info) expect(p.rows.length).toBeGreaterThan(0);
     expect(providerLabel("cloudwatch")).toBe("Amazon CloudWatch");
     expect(providerLabel("desconhecida")).toBe("desconhecida");
@@ -51,7 +68,7 @@ describe("catálogo", () => {
 });
 
 describe("genérico", () => {
-  const provider = createGenericProvider({ secret: SECRET });
+  const provider = createGenericProvider();
   const body = { event_id: "e1", monitor_id: 7, monitor_name: "Fila cheia", state: "warn", occurred_at: "2026-03-01T10:00:00Z", application: "pagamentos", tags: ["env:prod"], priority: "P2", link: "https://x.test/7" };
 
   it("normaliza o payload canônico", () => {
@@ -69,7 +86,7 @@ describe("genérico", () => {
 });
 
 describe("appdynamics", () => {
-  const provider = createAppdynamicsProvider({ secret: SECRET });
+  const provider = createAppdynamicsProvider();
   const body = { event_id: 991, event_type: "POLICY_OPEN_CRITICAL", application: "Checkout", health_rule: "CPU alta", policy: "Política A", event_time: "1767225600000", link: "https://ctl.test/e/991", priority: "1" };
 
   it("normaliza o evento da política: a regra de saúde identifica o alerta", () => {
@@ -104,7 +121,7 @@ describe("cloudwatch", () => {
   const message = (over: Record<string, unknown> = {}) =>
     JSON.stringify({ AlarmName: "CPU alta", AlarmDescription: "service:checkout priority:2 CPU acima de 80%", AlarmArn: ARN, NewStateValue: "ALARM", StateChangeTime: "2026-03-01T10:00:00.000+0000", ...over });
   const notification = (over: Record<string, unknown> = {}, inner = message()) => ({ Type: "Notification", MessageId: "m-1", TopicArn: TOPIC, Message: inner, Timestamp: "2026-03-01T10:00:05.000Z", ...over });
-  const provider = createCloudwatchProvider({ secret: SECRET });
+  const provider = createCloudwatchProvider({});
 
   it("normaliza o alarme: ARN identifica, descrição traz aplicação e prioridade", () => {
     expect(provider.parse(notification())).toMatchObject({
@@ -127,7 +144,7 @@ describe("cloudwatch", () => {
     expect(() => provider.parse(notification({}, "isto não é json"))).toThrow(ProviderPayloadError);
     expect(() => provider.parse(notification({}, JSON.stringify({ outra: "coisa" })))).toThrow(ProviderPayloadError);
     expect(() => provider.parse("texto")).toThrow(ProviderPayloadError);
-    const restricted = createCloudwatchProvider({ secret: SECRET, topicArns: [TOPIC] });
+    const restricted = createCloudwatchProvider({ topicArns: [TOPIC] });
     expect(restricted.parse(notification()).externalEventId).toBe("m-1");
     expect(() => restricted.parse(notification({ TopicArn: "arn:aws:sns:us-east-1:999999999999:outro" }))).toThrow(ProviderPayloadError);
   });
@@ -139,7 +156,7 @@ describe("cloudwatch", () => {
 
     it("confirma visitando o SubscribeURL do SNS, sem seguir redirecionamentos", async () => {
       const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
-      const p = createCloudwatchProvider({ secret: SECRET, fetch: fetchMock });
+      const p = createCloudwatchProvider({ fetch: fetchMock });
       expect(await p.handshake?.(confirmation())).toEqual({ message: "subscription confirmed" });
       expect(String(fetchMock.mock.calls[0][0])).toMatch(/^https:\/\/sns\.us-east-1\.amazonaws\.com\/\?Action=ConfirmSubscription/);
       expect(fetchMock.mock.calls[0][1]).toMatchObject({ redirect: "error" });
@@ -147,7 +164,7 @@ describe("cloudwatch", () => {
 
     it("recusa SubscribeURL que não seja o endpoint do SNS (a aplicação não vira proxy) e tópicos fora da lista", async () => {
       const fetchMock = vi.fn();
-      const p = createCloudwatchProvider({ secret: SECRET, topicArns: [TOPIC], fetch: fetchMock });
+      const p = createCloudwatchProvider({ topicArns: [TOPIC], fetch: fetchMock });
       for (const url of ["http://sns.us-east-1.amazonaws.com/?x", "https://evil.test/?x", "https://sns.us-east-1.amazonaws.com.evil.test/", "https://u:p@sns.us-east-1.amazonaws.com/", "isso não é url", "http://169.254.169.254/"]) {
         await expect(p.handshake?.(confirmation({ SubscribeURL: url }))).rejects.toBeInstanceOf(ProviderPayloadError);
       }
@@ -156,9 +173,9 @@ describe("cloudwatch", () => {
     });
 
     it("falha de rede ou resposta de erro do SNS vira erro do provedor (o SNS tenta de novo)", async () => {
-      const down = createCloudwatchProvider({ secret: SECRET, fetch: vi.fn().mockRejectedValue(new Error("rede")) });
+      const down = createCloudwatchProvider({ fetch: vi.fn().mockRejectedValue(new Error("rede")) });
       await expect(down.handshake?.(confirmation())).rejects.toBeInstanceOf(ProviderApiError);
-      const refused = createCloudwatchProvider({ secret: SECRET, fetch: vi.fn().mockResolvedValue(new Response("", { status: 403 })) });
+      const refused = createCloudwatchProvider({ fetch: vi.fn().mockResolvedValue(new Response("", { status: 403 })) });
       await expect(refused.handshake?.(confirmation())).rejects.toMatchObject({ status: 403 });
     });
 

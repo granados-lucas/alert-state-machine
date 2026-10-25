@@ -37,14 +37,15 @@ const admin = { "content-type": "application/json", "x-forwarded-email": "simula
     reconciliationRun: (id) => call(`/api/reconciliation/${id}`, { headers: admin }),
     listReconciliations: () => call("/api/reconciliation", { headers: admin }),
     journeys: () => call("/api/journeys", { headers: admin }),
+    // Webhook único: a fonte vai no corpo ("source"), a URL e o segredo são os mesmos para qualquer ferramenta.
     sendWebhook: (payload, { secret = webhookSecret, raw } = {}) =>
-      call("/api/webhooks/datadog", {
+      call("/api/webhooks", {
         method: "POST",
         headers: { "content-type": "application/json", "x-webhook-secret": secret },
-        body: raw ?? JSON.stringify(payload),
+        body: raw ?? JSON.stringify({ source: "datadog", ...payload }),
       }),
-    // Webhook de outra fonte: o corpo já vem serializado e os cabeçalhos (segredo/autenticação) são da fonte.
-    sendTo: (provider, body, headers) => call(`/api/webhooks/${provider}`, { method: "POST", headers, body }),
+    // Outra fonte no mesmo webhook: o corpo já vem serializado e a autenticação (cabeçalho ou Basic do SNS) é a da fonte.
+    sendTo: (body, headers) => call("/api/webhooks", { method: "POST", headers, body }),
     applications: () => call("/api/applications", { headers: admin }),
     alertDetail: (id) => call(`/api/alerts/${id}`, { headers: admin }),
     async listAllAlerts() {

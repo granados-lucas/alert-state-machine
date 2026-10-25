@@ -46,7 +46,7 @@ const catalog = generateCatalog({
 });
 const client = createClient({
   baseUrl: values.target,
-  webhookSecret: required("DATADOG_WEBHOOK_SECRET"),
+  webhookSecret: required("WEBHOOK_SECRET"),
 });
 const model = createModel(catalog.monitors);
 const fake = createFakeDatadog({ apiKey: required("DD_API_KEY"), appKey: required("DD_APP_KEY"), getTruth: (id) => model.get(id)?.truth, monitors: () => catalog.monitors });
@@ -117,7 +117,7 @@ problems.push(
   ...(await multiSourceScenario({
     client,
     log,
-    secrets: { cloudwatch: process.env.CLOUDWATCH_WEBHOOK_SECRET, appdynamics: process.env.APPDYNAMICS_WEBHOOK_SECRET, generic: process.env.GENERIC_WEBHOOK_SECRET },
+    secret: required("WEBHOOK_SECRET"),
   })),
 );
 await receiver.close();

@@ -35,6 +35,7 @@ export const SOURCES = {
     headers: (secret) => ({ "content-type": "application/json", "x-webhook-secret": secret }),
     externalId: (alarm) => `${alarm.application}/${alarm.name}`,
     payload: (alarm, state, at, eventId) => ({
+      source: "appdynamics",
       event_id: eventId,
       event_type: APPDYNAMICS_EVENT[state],
       application: alarm.application,
@@ -50,6 +51,7 @@ export const SOURCES = {
     headers: (secret) => ({ "content-type": "application/json", "x-webhook-secret": secret }),
     externalId: (alarm) => alarm.name,
     payload: (alarm, state, at, eventId) => ({
+      source: "generic",
       event_id: eventId,
       monitor_id: alarm.name,
       monitor_name: alarm.name,
@@ -70,20 +72,15 @@ const SEQUENCES = {
 };
 
 /**
- * Cada fonte recebe 3 alarmes em aplicações próprias (src-<fonte>-N), com sequências de eventos, uma reentrega
+ * Todas as fontes entram pelo mesmo webhook, com o mesmo segredo. Cada uma recebe 3 alarmes em aplicações próprias (src-<fonte>-N), com sequências de eventos, uma reentrega
  * duplicada e um segredo errado. Confere respostas, estado final, aplicação, fonte e prioridade na aplicação principal.
  */
-export async function multiSourceScenario({ client, secrets, log, runId = Date.now() }) {
+export async function multiSourceScenario({ client, secret, log, runId = Date.now() }) {
   const problems = [];
   let clock = Date.now();
   let n = 0;
   const expected = [];
   for (const [source, sequences] of Object.entries(SEQUENCES)) {
-    const secret = secrets[source];
-    if (!secret) {
-      log(`multi-source: ${source} skipped (no ${source.toUpperCase()}_WEBHOOK_SECRET)`);
-      continue;
-    }
     const def = SOURCES[source];
     for (const [i, sequence] of sequences.entries()) {
       const alarm = { name: `sim-${source}-${runId}-${i}`, application: `src-${source}-${i}`, priority: 1 + (i % 3) };
@@ -92,24 +89,23 @@ export async function multiSourceScenario({ client, secrets, log, runId = Date.n
         clock += 1000;
         const eventId = `${source}-${runId}-${++n}`;
         const body = JSON.stringify(def.payload(alarm, state, clock, eventId));
-        const r = await client.sendTo(source, body, def.headers(secret));
+        const r = await client.sendTo(body, def.headers(secret));
         // "unchanged" só ocorre se o alerta novo já nasce no estado enviado (ok).
         if (r.status !== 200 || !["applied", "unchanged"].includes(r.json?.status) || r.json?.state !== state) {
           problems.push(`${source} ${alarm.name}->${state}: got ${r.status} ${JSON.stringify(r.json)}, want applied/${state}`);
         }
         if (state === sequence[0] && sequence.length === 1) {
-          const again = await client.sendTo(source, body, def.headers(secret));
+          const again = await client.sendTo(body, def.headers(secret));
           if (again.json?.status !== "duplicate") problems.push(`${source} ${alarm.name}: duplicate delivery got ${JSON.stringify(again.json)}`);
         }
         last = state;
       }
       expected.push({ source, alarm, externalId: def.externalId(alarm), state: last });
     }
-    const denied = await client.sendTo(source, JSON.stringify(def.payload({ name: "x", application: "x", priority: 1 }, "alert", clock, `${source}-bad`)), def.headers("segredo-errado-0123456789"));
+    const denied = await client.sendTo(JSON.stringify(def.payload({ name: "x", application: "x", priority: 1 }, "alert", clock, `${source}-bad`)), def.headers("segredo-errado-0123456789"));
     if (denied.status !== 401) problems.push(`${source}: wrong secret got ${denied.status}, want 401`);
   }
 
-  if (expected.length === 0) return problems;
   const alerts = await client.listAllAlerts();
   for (const e of expected) {
     const got = alerts.find((a) => a.provider === e.source && a.externalId === e.externalId);

@@ -46,7 +46,7 @@ export default function GraphPage() {
               </table>
             </div>
             <ul className="list-disc space-y-1 px-4 pb-4 pl-8 text-sm text-muted">
-              <li>Autenticação do webhook: {p.auth} (segredo em <code>{p.secretEnv}</code>).</li>
+              <li>Webhook único (<code>POST /api/webhooks</code>): <code>&quot;source&quot;: &quot;{p.id}&quot;</code> no corpo{p.id === "cloudwatch" ? " (dispensado: o envelope do SNS é reconhecido)" : ""}.</li>
               {p.notes.map((note) => <li key={note}>{note}</li>)}
             </ul>
           </Card>

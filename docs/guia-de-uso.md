@@ -33,16 +33,15 @@ Em produção, defina estas variáveis (nomes em `.env.example`; **nunca** versi
 | Variável | Para quê | Obrigatória |
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL | sim |
-| `DATADOG_WEBHOOK_SECRET` | segredo do webhook do Datadog (≥ 16 caracteres). **Sem ele o webhook responde 401 a tudo** | sim, para receber eventos do Datadog |
-| `CLOUDWATCH_WEBHOOK_SECRET`, `APPDYNAMICS_WEBHOOK_SECRET`, `GENERIC_WEBHOOK_SECRET` | um segredo por fonte (≥ 16 caracteres); sem o segredo, o webhook da fonte responde 401 (ver seção 4.6) | só para as fontes usadas |
-| `CLOUDWATCH_TOPIC_ARNS` | ARNs de tópico do SNS aceitos (separados por vírgula); vazio = qualquer tópico que conheça o segredo | não |
+| `WEBHOOK_SECRET` | segredo do **webhook único**, o mesmo para qualquer ferramenta (≥ 16 caracteres). **Sem ele o webhook responde 401 a tudo** | sim, para receber eventos |
+| `CLOUDWATCH_TOPIC_ARNS` | só CloudWatch: ARNs de tópico do SNS aceitos (separados por vírgula); vazio = qualquer tópico que conheça o segredo | não |
 | `AUTH_USER_HEADER` | cabeçalho com a identidade do usuário, preenchido pelo SSO (padrão `x-forwarded-email`); só alimenta a auditoria | recomendada |
 | `DD_API_KEY`, `DD_APP_KEY` | chaves da API do Datadog (silenciar e reconciliar) | só para essas funções |
 | `DD_SITE` | site do Datadog: `datadoghq.com` (padrão), `datadoghq.eu`, `us3.datadoghq.com`, `us5.datadoghq.com`, `ap1.datadoghq.com`, `ap2.datadoghq.com`, `uk1.datadoghq.com`, `ddog-gov.com`, `us2.ddog-gov.com` | só com as chaves |
 | `DD_API_BASE_URL` | substitui o destino da API (testes). **Deixe vazio no uso real**: no `compose.yaml` o padrão aponta para o Datadog *simulado* | não |
 | `REMEDIATION_ALLOWED_HOSTS` | destinos permitidos para remediação (`host` ou `host:porta`, separados por vírgula). Vazio = nenhuma remediação sai | só com remediação |
 
-**Segurança de implantação (importante):** a aplicação **não tem login**; o SSO corporativo deve ficar na frente e preencher o cabeçalho de identidade. Ela só pode ser alcançada através do SSO. A rota `/api/webhooks/*` precisa ficar **fora** do SSO (quem chama é o Datadog) e é protegida por um segredo próprio de cada fonte (`<FONTE>_WEBHOOK_SECRET`). Detalhes em `docs/architecture.md`.
+**Segurança de implantação (importante):** a aplicação **não tem login**; o SSO corporativo deve ficar na frente e preencher o cabeçalho de identidade. Ela só pode ser alcançada através do SSO. A rota `/api/webhooks` precisa ficar **fora** do SSO (quem chama são as ferramentas) e é protegida pelo `WEBHOOK_SECRET`. Detalhes em `docs/architecture.md`.
 
 ## 3. Criar alertas
 
@@ -103,13 +102,14 @@ No Datadog: **Integrations → Webhooks → New** (a integração Webhooks preci
 | Campo | Valor |
 |---|---|
 | **Name** | `global-alerts` (é o nome que os monitores vão citar) |
-| **URL** | `https://<endereço-do-global-alerts>/api/webhooks/datadog` |
-| **Custom Headers** | `{"X-Webhook-Secret": "<o mesmo valor de DATADOG_WEBHOOK_SECRET>"}` |
+| **URL** | `https://<endereço-do-global-alerts>/api/webhooks` (a mesma para qualquer ferramenta) |
+| **Custom Headers** | `{"X-Webhook-Secret": "<o valor de WEBHOOK_SECRET>"}` |
 | **Payload** | o JSON abaixo, **exatamente** (cole como está) |
 | **Encode as form** | desmarcado |
 
 ```json
 {
+  "source": "datadog",
   "event_id": "$ID",
   "monitor_id": "$ALERT_ID",
   "monitor_name": "$ALERT_TITLE",
@@ -123,6 +123,7 @@ No Datadog: **Integrations → Webhooks → New** (a integração Webhooks preci
 ```
 
 Dicas:
+- O campo `"source": "datadog"` diz à aplicação qual tradutor usar. É a **única** coisa que muda entre ferramentas (seção 4.6).
 - Marque o segredo como variável **oculta** no Datadog (custom variables → *hide from view*), para não ficar visível na configuração.
 - O endereço precisa ser alcançável **pelo Datadog** (internet pública ou uma rota permitida) e usar **HTTPS**.
 - O Datadog dá timeout em 15 s e só reenvia em erro 5xx (até 5 vezes). A aplicação responde rápido e devolve 2xx para duplicatas, então reenvios são seguros.
@@ -156,10 +157,10 @@ Se o monitor ainda não existe como alerta, ele é criado; se existe (por cadast
 **Sem o Datadog** (confere segredo, formato e criação do alerta):
 
 ```bash
-curl -i -X POST https://<endereço>/api/webhooks/datadog \
+curl -i -X POST https://<endereço>/api/webhooks \
   -H "content-type: application/json" \
-  -H "x-webhook-secret: <DATADOG_WEBHOOK_SECRET>" \
-  -d '{"event_id":"teste-1","monitor_id":"1234567","monitor_name":"Teste","transition":"Triggered","alert_type":"error","priority":"P2","tags":"service:checkout","last_updated":"1767225600000","link":""}'
+  -H "x-webhook-secret: <WEBHOOK_SECRET>" \
+  -d '{"source":"datadog","event_id":"teste-1","monitor_id":"1234567","monitor_name":"Teste","transition":"Triggered","alert_type":"error","priority":"P2","tags":"service:checkout","last_updated":"1767225600000","link":""}'
 ```
 
 Resposta esperada: `200 {"status":"applied","alertId":…,"state":"alert"}`. Repetir o mesmo comando devolve `{"status":"duplicate"}`.
@@ -171,26 +172,28 @@ Resposta esperada: `200 {"status":"applied","alertId":…,"state":"alert"}`. Rep
 | Resposta | Significado | Ação |
 |---|---|---|
 | `200` `applied` / `unchanged` / `stale` / `ignored` / `duplicate` | processado (estado mudou / igual / evento antigo / sem efeito / repetido) | nada |
-| `401` | segredo ausente ou errado (ou `DATADOG_WEBHOOK_SECRET` não configurado) | conferir o cabeçalho `X-Webhook-Secret` e a variável |
+| `401` | segredo ausente ou errado (ou `WEBHOOK_SECRET` não configurado) | conferir o cabeçalho `X-Webhook-Secret` e a variável |
 | `400` | JSON inválido ou campos obrigatórios ausentes | conferir o payload; ver a armadilha das aspas abaixo |
 | `413` | corpo maior que 64 KB | não deve ocorrer com o payload recomendado |
-| `404` | provedor desconhecido na URL | use `/api/webhooks/datadog` |
+| `400` `unknown source` | `source` com valor que não existe (ex.: `newrelic`) | usar `datadog`, `appdynamics` ou `generic` (o CloudWatch dispensa o campo) |
 | `500` | falha interna (ex.: banco fora do ar) | o Datadog reenvia sozinho |
 
 > ⚠ **Aspas no nome do monitor.** A documentação do Datadog não diz se ele escapa aspas e barras nos valores do payload. Um nome de monitor com `"` pode gerar JSON inválido: a aplicação responde 400, o Datadog **não** reenvia (4xx) e o evento se perde. Evite aspas em nomes de monitores e use a reconciliação (seção 7) como rede de segurança.
 
-### 4.6 Outras fontes além do Datadog
+### 4.6 Outras fontes e como trocar de ferramenta
 
-O mesmo mapa recebe alertas de **Amazon CloudWatch**, **AppDynamics** e de qualquer ferramenta pelo formato **genérico**. Cada fonte tem endpoint e segredo próprios; a seção 4.1 a 4.5 vale para o Datadog e o resto muda só em como a fonte é configurada:
+**Há um webhook só**: `POST /api/webhooks`, com um segredo só (`WEBHOOK_SECRET`) para qualquer ferramenta. Quem informa a fonte é o campo `source` do corpo. Para trocar de ferramenta (ou ligar uma segunda), **a URL e o segredo continuam os mesmos**: você só muda o modelo de payload da ferramenta nova.
 
-| Fonte | Endpoint | Como autentica | Guia |
+| Fonte | `source` | Como a ferramenta chama | Guia |
 |---|---|---|---|
-| Datadog | `/api/webhooks/datadog` | cabeçalho `X-Webhook-Secret` | `docs/integrations/datadog.md` |
-| CloudWatch | `/api/webhooks/cloudwatch` | assinatura HTTPS do SNS com `https://sns:<segredo>@host/...` | `docs/integrations/cloudwatch.md` |
-| AppDynamics | `/api/webhooks/appdynamics` | cabeçalho `X-Webhook-Secret` na ação HTTP | `docs/integrations/appdynamics.md` |
-| Genérica | `/api/webhooks/generic` | cabeçalho `X-Webhook-Secret` | `docs/integrations/generic.md` |
+| Datadog | `datadog` | integração Webhooks com o payload da seção 4.1 | `docs/integrations/datadog.md` |
+| AppDynamics | `appdynamics` | ação de requisição HTTP com o modelo do guia | `docs/integrations/appdynamics.md` |
+| CloudWatch | dispensado | assinatura HTTPS do SNS com `https://sns:<segredo>@host/api/webhooks` (o SNS não permite personalizar o corpo nem os cabeçalhos; o envelope dele é reconhecido) | `docs/integrations/cloudwatch.md` |
+| Qualquer outra | `generic` (ou omitido) | JSON canônico: você já informa o estado (`ok`, `warn`, `alert`, `no_data`) | `docs/integrations/generic.md` |
 
-No cadastro manual (**Novo alerta**) escolha a **fonte**; o ID do monitor depende dela (número no Datadog, ARN no CloudWatch, `aplicação/regra` no AppDynamics). O mesmo ID em fontes diferentes são alertas diferentes. A tela **Máquina de estados** mostra como cada fonte é traduzida para os estados daqui. Silenciar e reconciliar só existem para o Datadog. ⚠ Os adaptadores novos foram escritos a partir da documentação e **não foram testados com as ferramentas reais**.
+Sem `source`, o corpo é tratado como **genérico** (ou como CloudWatch, se for um envelope do SNS). Um `source` desconhecido responde `400 unknown source`.
+
+No cadastro manual (**Novo alerta**) escolha a **fonte**; o ID do monitor depende dela (número no Datadog, ARN no CloudWatch, `aplicação/regra` no AppDynamics). O mesmo ID em fontes diferentes são alertas diferentes, então **trocar de ferramenta cria alertas novos**; os da ferramenta antiga ficam parados até serem arquivados. A tela **Máquina de estados** mostra como cada fonte é traduzida para os estados daqui. Silenciar e reconciliar só existem para o Datadog. ⚠ Os adaptadores novos foram escritos a partir da documentação e **não foram testados com as ferramentas reais**.
 
 ## 5. Organizar: aplicações e jornadas
 
@@ -255,7 +258,7 @@ A tela **Status** (`/status`) mostra a saúde da própria aplicação: banco, qu
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
-| Webhook devolve `401` | segredo diferente ou não configurado | igualar o cabeçalho `X-Webhook-Secret` e `DATADOG_WEBHOOK_SECRET` |
+| Webhook devolve `401` | segredo diferente ou não configurado | igualar o cabeçalho `X-Webhook-Secret` e `WEBHOOK_SECRET` |
 | O alerta existe mas fica em "Sem dados" | nenhum evento chegou: o `@webhook-global-alerts` não está na mensagem do monitor, ou o ID do cadastro não é o do monitor | conferir a mensagem do monitor e o ID; rodar uma reconciliação |
 | O alerta foi criado, mas na aplicação `unassigned` | o monitor não tem a tag `service:` | adicionar a tag no monitor (o próximo evento move o alerta) |
 | Dois alertas "iguais" | IDs de monitor diferentes | cada monitor do Datadog é um alerta; arquive o que sobrar |

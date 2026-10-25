@@ -22,7 +22,7 @@ Prefixo `global_alerts_`. **Contadores e histogramas vivem na memória do proces
 
 | Métrica | Tipo | Rótulos | Significado |
 |---|---|---|---|
-| `webhook_requests_total` | contador | `provider`, `outcome` | `applied`, `unchanged`, `stale`, `ignored`, `duplicate`, `handshake`, `unauthorized`, `invalid`, `rejected`, `error`, `unknown_provider` |
+| `webhook_requests_total` | contador | `provider` (a fonte; `unknown` quando ainda não dá para saber, ex.: não autenticou), `outcome` | `applied`, `unchanged`, `stale`, `ignored`, `duplicate`, `handshake`, `unauthorized`, `unknown_source`, `invalid`, `rejected`, `error` |
 | `webhook_duration_seconds` | histograma | `provider` | tempo de processamento |
 | `remediation_runs_total` | contador | `status` | `success`, `failed`, `skipped` |
 | `mute_operations_total` | contador | `action`, `status` | `mute`/`unmute` × `succeeded`/`failed` |
@@ -31,7 +31,7 @@ Prefixo `global_alerts_`. **Contadores e histogramas vivem na memória do proces
 | `unhandled_errors_total` | contador | | erros que viraram resposta 500 |
 | `alerts` | medida | `state` | alertas ativos por estado |
 | `last_event_timestamp_seconds` | medida | `provider` | instante do último evento aplicado (0 = nenhum) |
-| `provider_webhook_enabled` | medida | `provider` | 1 se o segredo da fonte está configurado |
+| `webhook_enabled` | medida | | 1 se o `WEBHOOK_SECRET` do webhook único está configurado |
 | `mute_operations_pending`, `mute_operations_oldest_pending_seconds` | medida | | silêncios sem desfecho gravado |
 | `reconciliation_last_run_timestamp_seconds` | medida | | início da última reconciliação (0 = nunca) |
 | `remediation_recent_failed` | medida | | falhas entre as últimas 50 remediações |
@@ -56,7 +56,7 @@ scrape_configs:
 | Condição (PromQL) | Por quê |
 |---|---|
 | `global_alerts_database_up == 0` | banco fora: nada é gravado e o webhook responde 500 |
-| `time() - global_alerts_last_event_timestamp_seconds{provider="datadog"} > 3600 and global_alerts_provider_webhook_enabled{provider="datadog"} == 1` | a fonte parou de entregar (webhook quebrado, segredo trocado). Só você sabe o ritmo normal de cada fonte |
+| `time() - global_alerts_last_event_timestamp_seconds{provider="datadog"} > 3600 and global_alerts_webhook_enabled == 1` | a fonte parou de entregar (webhook quebrado, segredo trocado). Só você sabe o ritmo normal de cada fonte |
 | `increase(global_alerts_webhook_requests_total{outcome="unauthorized"}[10m]) > 0` | segredo errado na fonte, ou alguém tentando |
 | `increase(global_alerts_webhook_requests_total{outcome=~"invalid|error"}[10m]) > 0` | payload fora do formato (perde eventos) ou erro interno |
 | `global_alerts_mute_operations_oldest_pending_seconds > 600` | silêncio aplicado na fonte e não gravado, sem recuperação |

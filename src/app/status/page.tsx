@@ -57,13 +57,16 @@ export default async function StatusPage() {
 
       <section aria-labelledby="sources" className="flex flex-col gap-3">
         <SectionTitle id="sources">Fontes de alertas</SectionTitle>
+        <p className={cn("text-sm", t.webhookEnabled ? "text-muted" : "text-alert-fg")}>
+          Webhook único <code>POST /api/webhooks</code>:{" "}
+          {t.webhookEnabled ? "habilitado (segredo configurado)." : "DESLIGADO: defina WEBHOOK_SECRET (16 caracteres ou mais); sem ele toda entrega responde 401."}
+        </p>
         <Card className="overflow-x-auto p-0">
           <table className="w-full text-sm">
             <caption className="sr-only">Situação de cada fonte de alertas</caption>
             <thead>
               <tr className="border-b border-line">
                 <th scope="col" className={tableHead}>Fonte</th>
-                <th scope="col" className={tableHead}>Webhook</th>
                 <th scope="col" className={tableHead}>API (silenciar / reconciliar)</th>
                 <th scope="col" className={tableHead}>Último evento aplicado</th>
               </tr>
@@ -72,7 +75,6 @@ export default async function StatusPage() {
               {t.providers.map((p) => (
                 <tr key={p.id} className="border-b border-line last:border-b-0">
                   <td className={`${tableCell} font-medium`}>{labels.get(p.id as never) ?? p.id}</td>
-                  <td className={tableCell}>{p.webhook ? "Habilitado" : <span className="text-muted">Desligado (sem segredo válido)</span>}</td>
                   <td className={tableCell}>{p.control || p.source ? "Configurada" : <span className="text-muted">Não configurada ou não suportada</span>}</td>
                   <td className={tableCell}>
                     {p.lastEventAt ? <>{formatTime(p.lastEventAt)} <span className="text-muted">({ago(p.lastEventAt)})</span></> : <span className="text-muted">nenhum</span>}

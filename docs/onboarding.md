@@ -15,7 +15,7 @@ docker compose --profile simulator up --build --abort-on-container-exit --exit-c
 docker compose down -v           # apaga os dados
 ```
 
-Os segredos padrão do `compose.yaml` são só para desenvolvimento local (portas em `127.0.0.1`); defina os seus em `.env` (veja `.env.docker.example`). A aplicação **não tem login**: o SSO corporativo fica na frente e preenche o cabeçalho `AUTH_USER_HEADER` (padrão `x-forwarded-email`) com a identidade, usada na auditoria; sem ele a ação é registrada como `anonymous`. O webhook usa `DATADOG_WEBHOOK_SECRET` (header `X-Webhook-Secret`). Para chamar remediações, o destino precisa estar em `REMEDIATION_ALLOWED_HOSTS`.
+Os segredos padrão do `compose.yaml` são só para desenvolvimento local (portas em `127.0.0.1`); defina os seus em `.env` (veja `.env.docker.example`). A aplicação **não tem login**: o SSO corporativo fica na frente e preenche o cabeçalho `AUTH_USER_HEADER` (padrão `x-forwarded-email`) com a identidade, usada na auditoria; sem ele a ação é registrada como `anonymous`. O webhook único usa `WEBHOOK_SECRET` (header `X-Webhook-Secret`). Para chamar remediações, o destino precisa estar em `REMEDIATION_ALLOWED_HOSTS`.
 
 ## Primeira execução sem Docker
 
@@ -24,7 +24,7 @@ pnpm install
 pnpm dev          # http://localhost:3000
 ```
 
-Variáveis (nomes em `.env.example`; valores só em `.env.local`, que é ignorado pelo Git): `DATABASE_URL`, opcional `DATABASE_URL_UNPOOLED` (preferida para migrações), `AUTH_USER_HEADER`, `DATADOG_WEBHOOK_SECRET`, `REMEDIATION_ALLOWED_HOSTS` e `LOG_LEVEL`. Nada disso é necessário para `pnpm check`. As páginas consultam o banco: `pnpm dev` exige PostgreSQL (use `docker compose up db migrate`, porta 5433 no host).
+Variáveis (nomes em `.env.example`; valores só em `.env.local`, que é ignorado pelo Git): `DATABASE_URL`, opcional `DATABASE_URL_UNPOOLED` (preferida para migrações), `AUTH_USER_HEADER`, `WEBHOOK_SECRET`, `REMEDIATION_ALLOWED_HOSTS` e `LOG_LEVEL`. Nada disso é necessário para `pnpm check`. As páginas consultam o banco: `pnpm dev` exige PostgreSQL (use `docker compose up db migrate`, porta 5433 no host).
 
 ## Banco de dados
 

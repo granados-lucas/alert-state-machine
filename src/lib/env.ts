@@ -9,10 +9,9 @@ export function getLogLevel() {
   return parseEnv("LOG_LEVEL", process.env.LOG_LEVEL, logLevelSchema);
 }
 
-/** Segredo do webhook de uma fonte: variável `<ID>_WEBHOOK_SECRET` (mín. 16 caracteres). Ausente = webhook desligado. */
-export function getWebhookSecret(providerId: string) {
-  const name = `${providerId.toUpperCase()}_WEBHOOK_SECRET`;
-  return process.env[name] ? parseEnv(name, process.env[name], secretSchema) : undefined;
+/** Segredo do webhook único (mín. 16 caracteres). Ausente = webhook desligado (responde 401 a tudo). */
+export function getWebhookSecret() {
+  return process.env.WEBHOOK_SECRET ? parseEnv("WEBHOOK_SECRET", process.env.WEBHOOK_SECRET, secretSchema) : undefined;
 }
 
 /** ARNs de tópico do SNS aceitos pelo CloudWatch (separados por vírgula). Vazio = qualquer tópico que conheça o segredo. */

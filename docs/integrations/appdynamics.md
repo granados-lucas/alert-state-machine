@@ -4,18 +4,19 @@ Estudo feito em 2026-10-25 nas páginas do Splunk AppDynamics sobre [ações e m
 
 ## Como o AppDynamics chega aqui
 
-Uma **política** do AppDynamics dispara uma **ação de requisição HTTP** com um **modelo** (método, URL, cabeçalhos e corpo com variáveis Velocity `${…}`). O Global Alerts recebe esse POST em `/api/webhooks/appdynamics`.
+Uma **política** do AppDynamics dispara uma **ação de requisição HTTP** com um **modelo** (método, URL, cabeçalhos e corpo com variáveis Velocity `${…}`). O Global Alerts recebe esse POST no webhook único, `/api/webhooks`, identificado por `"source": "appdynamics"` no corpo.
 
 ## Configurar
 
-1. Defina `APPDYNAMICS_WEBHOOK_SECRET` (≥ 16 caracteres).
+1. Use o `WEBHOOK_SECRET` da aplicação (o mesmo de todas as ferramentas).
 2. No AppDynamics, crie um **modelo de requisição HTTP**:
-   - **Método e URL:** `POST https://<host-do-global-alerts>/api/webhooks/appdynamics`
+   - **Método e URL:** `POST https://<host-do-global-alerts>/api/webhooks`
    - **Cabeçalho:** `X-Webhook-Secret: <o segredo>` (cabeçalhos personalizados são suportados; **não verificado** se o valor fixo é aceito sem variável).
    - **Corpo (JSON):**
 
 ```json
 {
+  "source": "appdynamics",
   "event_id": "${latestEvent.id}",
   "event_type": "${latestEvent.eventType}",
   "application": "${latestEvent.application.name}",

@@ -1,12 +1,9 @@
 import { z } from "zod";
-import { headerSecretAuth, WEBHOOK_SECRET_HEADER } from "../auth";
 import { applicationFromTags, parsePriority, safeHttpUrl } from "../common";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 import { createDatadogControl, type DatadogApiConfig } from "./api";
 import { createDatadogSource } from "./source";
 import { mapTransition } from "./states";
-
-export const DATADOG_SECRET_HEADER = WEBHOOK_SECRET_HEADER;
 
 // Payload configurado na integração Webhooks do Datadog (ver docs/integrations/datadog.md).
 // Variáveis `$X` do Datadog chegam como texto; números são aceitos por tolerância.
@@ -27,12 +24,11 @@ export { mapTransition };
 
 export { applicationFromTags };
 
-export function createDatadogProvider(options: { secret: string | undefined; api?: DatadogApiConfig; fetch?: typeof fetch }): AlertProvider {
+export function createDatadogProvider(options: { api?: DatadogApiConfig; fetch?: typeof fetch }): AlertProvider {
   return {
     id: "datadog",
     control: options.api ? createDatadogControl(options.api, options.fetch) : undefined,
     source: options.api ? createDatadogSource(options.api, options.fetch) : undefined,
-    authenticate: headerSecretAuth(options.secret),
     parse(body): NormalizedEvent {
       const parsed = payloadSchema.safeParse(body);
       if (!parsed.success) throw new ProviderPayloadError("Invalid Datadog webhook payload");

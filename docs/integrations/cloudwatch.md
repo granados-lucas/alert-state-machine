@@ -4,11 +4,11 @@ Estudo feito em 2026-10-25 nas páginas oficiais do Amazon SNS ([formato das men
 
 ## Como o CloudWatch chega aqui
 
-O CloudWatch não chama webhooks: o **alarme publica num tópico do SNS** e o SNS entrega por **assinatura HTTPS** a `POST /api/webhooks/cloudwatch`.
+O CloudWatch não chama webhooks: o **alarme publica num tópico do SNS** e o SNS entrega por **assinatura HTTPS** ao webhook único, `POST /api/webhooks`. O corpo do SNS não é personalizável, então não leva o campo `source`: a aplicação reconhece o envelope (`Type` e `TopicArn`).
 
 | Fato (documentação) | Uso aqui |
 |---|---|
-| O SNS aceita usuário e senha na URL da assinatura (`https://usuario:senha@host`), enviados como Basic/Digest sobre HTTPS | **Autenticação:** o segredo `CLOUDWATCH_WEBHOOK_SECRET` é a **senha**; o usuário é ignorado. Não há como o SNS enviar um cabeçalho personalizado |
+| O SNS aceita usuário e senha na URL da assinatura (`https://usuario:senha@host`), enviados como Basic/Digest sobre HTTPS | **Autenticação:** o `WEBHOOK_SECRET` é a **senha**; o usuário é ignorado. Não há como o SNS enviar um cabeçalho personalizado |
 | Ao assinar, o SNS envia `SubscriptionConfirmation` com `SubscribeURL` e `Token`; **nenhuma notificação chega antes de a assinatura ser confirmada** | A aplicação confirma sozinha, mas só visitando um `SubscribeURL` `https://sns.<região>.amazonaws.com[.cn]/…` (sem usuário/senha, sem redirecionamento, 10 s). Outro destino responde 400 e **não é chamado** |
 | O corpo é JSON, mas o `Content-Type` é `text/plain` | A leitura do corpo ignora o tipo de conteúdo |
 | O SNS considera retentáveis os erros 5xx e 429; os demais 4xx são falhas permanentes | Mesmo critério do webhook do Datadog (4xx só quando reenviar não resolve) |
@@ -16,8 +16,8 @@ O CloudWatch não chama webhooks: o **alarme publica num tópico do SNS** e o SN
 
 ## Configurar
 
-1. Defina `CLOUDWATCH_WEBHOOK_SECRET` (≥ 16 caracteres; **só letras, números, `-` e `_`**, porque vai dentro de uma URL). Opcional: `CLOUDWATCH_TOPIC_ARNS` com os ARNs de tópico aceitos (sem isso, qualquer tópico que conheça o segredo envia eventos).
-2. Crie um tópico SNS (ou use o dos alarmes) e uma assinatura **HTTPS** com o endpoint `https://sns:<SEGREDO>@<host-do-global-alerts>/api/webhooks/cloudwatch`. A aplicação precisa ser alcançável pela internet **neste caminho** (o SNS não suporta endpoints privados) e esse caminho fica fora do SSO.
+1. Use o `WEBHOOK_SECRET` da aplicação. Como ele vai dentro de uma URL, **só pode ter letras, números, `-` e `_`** (um segredo com `@`, `:` ou `/` quebra a URL da assinatura). Opcional: `CLOUDWATCH_TOPIC_ARNS` com os ARNs de tópico aceitos (sem isso, qualquer tópico que conheça o segredo envia eventos).
+2. Crie um tópico SNS (ou use o dos alarmes) e uma assinatura **HTTPS** com o endpoint `https://sns:<SEGREDO>@<host-do-global-alerts>/api/webhooks`. A aplicação precisa ser alcançável pela internet **neste caminho** (o SNS não suporta endpoints privados) e esse caminho fica fora do SSO.
 3. O SNS envia a confirmação; a aplicação a confirma (resposta `{"status":"handshake"}`). Se a confirmação falhar (502), o SNS tenta de novo.
 4. Em cada alarme, adicione o tópico como ação para **ALARM**, **OK** e **INSUFFICIENT_DATA**.
 5. Na **descrição do alarme**, inclua `service:<aplicação>` e, se quiser, `priority:<1 a 5>` (ex.: `service:checkout priority:2 CPU acima de 80%`). Sem `service:` a aplicação é `unassigned`; sem `priority:` não há prioridade (conta como P3).

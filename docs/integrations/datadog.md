@@ -6,9 +6,9 @@ Estudo das APIs do Datadog feito em 2026-10-23 e como o Global Alerts as usa. Fo
 
 | Recurso | Fato documentado | Uso aqui |
 |---|---|---|
-| Webhooks (integração) | POST para a URL configurada; **payload JSON personalizável**; **headers personalizados** em JSON; variáveis como `$ID`, `$ALERT_ID`, `$ALERT_TITLE`, `$ALERT_TRANSITION`, `$ALERT_TYPE`, `$ALERT_PRIORITY`, `$TAGS`, `$LAST_UPDATED` (epoch ms), `$LINK`, `$ORG_ID` | Entrada de eventos (`POST /api/webhooks/datadog`) |
+| Webhooks (integração) | POST para a URL configurada; **payload JSON personalizável**; **headers personalizados** em JSON; variáveis como `$ID`, `$ALERT_ID`, `$ALERT_TITLE`, `$ALERT_TRANSITION`, `$ALERT_TYPE`, `$ALERT_PRIORITY`, `$TAGS`, `$LAST_UPDATED` (epoch ms), `$LINK`, `$ORG_ID` | Entrada de eventos (`POST /api/webhooks`, com `"source": "datadog"`) |
 | Disparo | Citar `@webhook-<nome>` na mensagem do monitor | Configuração em cada monitor (ou em template) |
-| Autenticação | Basic na URL (`https://user:pass@host`), **custom headers**, OAuth 2.0 | **Header `X-Webhook-Secret`** com segredo compartilhado, comparado em tempo constante |
+| Autenticação | Basic na URL (`https://user:pass@host`), **custom headers**, OAuth 2.0 | **Header `X-Webhook-Secret`** com o `WEBHOOK_SECRET` (o mesmo para todas as ferramentas), comparado em tempo constante |
 | Reentrega | Só em **erro interno ou resposta 5xx**; **timeout de 15 s**; **5 tentativas** | Responder rápido; 2xx para duplicata; 4xx só quando reenviar não adianta; 5xx só em falha transitória |
 | Estados do monitor (API) | `overall_state`: `Alert, Ignored, No Data, OK, Skipped, Unknown, Warn` | Mapeamento para os 4 estados internos (abaixo) |
 | Monitors API | `GET /api/v1/monitor` (filtros `monitor_tags`, `name`; paginação `page`/`page_size` ou `id_offset`), exige permissão `monitors_read` | **Não usada ainda** (reconciliação futura) |
@@ -19,12 +19,13 @@ Estudo das APIs do Datadog feito em 2026-10-23 e como o Global Alerts as usa. Fo
 Em **Integrations → Webhooks → New**:
 
 - **Name:** `global-alerts` (os monitores citam `@webhook-global-alerts`).
-- **URL:** `https://<host-do-global-alerts>/api/webhooks/datadog`.
-- **Custom Headers:** `{"X-Webhook-Secret": "<valor de DATADOG_WEBHOOK_SECRET>"}`. Marque a variável como oculta (custom variables → *hide from view*).
+- **URL:** `https://<host-do-global-alerts>/api/webhooks` (a mesma para qualquer ferramenta).
+- **Custom Headers:** `{"X-Webhook-Secret": "<valor de WEBHOOK_SECRET>"}`. Marque a variável como oculta (custom variables → *hide from view*).
 - **Payload:**
 
 ```json
 {
+  "source": "datadog",
   "event_id": "$ID",
   "monitor_id": "$ALERT_ID",
   "monitor_name": "$ALERT_TITLE",

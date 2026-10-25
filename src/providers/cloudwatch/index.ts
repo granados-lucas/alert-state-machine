@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { eventTo } from "@/domain/alert-machine";
-import { basicPasswordAuth } from "../auth";
 import { applicationFromTags, parsePriority, parseTime, tokensFrom } from "../common";
 import { ProviderApiError, ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 import { ALARM_STATE_EQUIVALENCE } from "./states";
@@ -38,11 +37,10 @@ function consoleLink(arn: string, name: string) {
   return region ? `https://console.aws.amazon.com/cloudwatch/home?region=${region}#alarmsV2:alarm/${encodeURIComponent(name)}` : null;
 }
 
-export function createCloudwatchProvider(options: { secret: string | undefined; topicArns?: string[]; fetch?: typeof fetch }): AlertProvider {
+export function createCloudwatchProvider(options: { topicArns?: string[]; fetch?: typeof fetch }): AlertProvider {
   const fetchImpl = options.fetch ?? fetch;
   return {
     id: "cloudwatch",
-    authenticate: basicPasswordAuth(options.secret),
     async handshake(body) {
       const parsed = envelope.safeParse(body);
       if (!parsed.success) return null; // o parse acusa o payload inválido

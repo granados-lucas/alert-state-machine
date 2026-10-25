@@ -43,11 +43,7 @@ services:
       # Identidade do usuário: o SSO corporativo na frente preenche este cabeçalho (auditoria). Sem SSO,
       # tudo é registrado como "anonymous" e a aplicação NÃO deve ser exposta (portas só em 127.0.0.1).
       AUTH_USER_HEADER: ${AUTH_USER_HEADER:-x-forwarded-email}
-      DATADOG_WEBHOOK_SECRET: ${DATADOG_WEBHOOK_SECRET:-dev-datadog-secret-change-me-01}
-      # Uma fonte por segredo (<ID>_WEBHOOK_SECRET): sem o segredo, o webhook da fonte responde 401.
-      CLOUDWATCH_WEBHOOK_SECRET: ${CLOUDWATCH_WEBHOOK_SECRET:-dev-cloudwatch-secret-change-01}
-      APPDYNAMICS_WEBHOOK_SECRET: ${APPDYNAMICS_WEBHOOK_SECRET:-dev-appdynamics-secret-change-01}
-      GENERIC_WEBHOOK_SECRET: ${GENERIC_WEBHOOK_SECRET:-dev-generic-secret-change-me-0001}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret-change-me-0001}
       # Destinos de remediação permitidos (host ou host:porta). O simulador precisa estar na lista.
       REMEDIATION_ALLOWED_HOSTS: ${REMEDIATION_ALLOWED_HOSTS:-simulator:9100,simulator-demo:9100}
       # Valor referenciado por headers "env:SIMULATOR_REMEDIATION_TOKEN" das remediações do simulador.
@@ -77,10 +73,7 @@ services:
       context: ./simulator
     environment:
       TARGET_URL: http://app:3000
-      DATADOG_WEBHOOK_SECRET: ${DATADOG_WEBHOOK_SECRET:-dev-datadog-secret-change-me-01}
-      CLOUDWATCH_WEBHOOK_SECRET: ${CLOUDWATCH_WEBHOOK_SECRET:-dev-cloudwatch-secret-change-01}
-      APPDYNAMICS_WEBHOOK_SECRET: ${APPDYNAMICS_WEBHOOK_SECRET:-dev-appdynamics-secret-change-01}
-      GENERIC_WEBHOOK_SECRET: ${GENERIC_WEBHOOK_SECRET:-dev-generic-secret-change-me-0001}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret-change-me-0001}
       SIMULATOR_REMEDIATION_TOKEN: ${SIMULATOR_REMEDIATION_TOKEN:-dev-remediation-token-change-me-01}
       RECEIVER_PUBLIC_URL: http://simulator:9100
       DD_API_KEY: ${DD_API_KEY:-dev-datadog-api-key-0001}
@@ -105,10 +98,7 @@ services:
     restart: unless-stopped
     environment:
       TARGET_URL: http://app:3000
-      DATADOG_WEBHOOK_SECRET: ${DATADOG_WEBHOOK_SECRET:-dev-datadog-secret-change-me-01}
-      CLOUDWATCH_WEBHOOK_SECRET: ${CLOUDWATCH_WEBHOOK_SECRET:-dev-cloudwatch-secret-change-01}
-      APPDYNAMICS_WEBHOOK_SECRET: ${APPDYNAMICS_WEBHOOK_SECRET:-dev-appdynamics-secret-change-01}
-      GENERIC_WEBHOOK_SECRET: ${GENERIC_WEBHOOK_SECRET:-dev-generic-secret-change-me-0001}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret-change-me-0001}
       SIMULATOR_REMEDIATION_TOKEN: ${SIMULATOR_REMEDIATION_TOKEN:-dev-remediation-token-change-me-01}
       RECEIVER_PUBLIC_URL: http://simulator-demo:9100
       DD_API_KEY: ${DD_API_KEY:-dev-datadog-api-key-0001}

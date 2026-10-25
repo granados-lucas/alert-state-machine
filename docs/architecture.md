@@ -15,8 +15,8 @@ src/
 ├── providers/                # PORTA para ferramentas de monitoramento (uma pasta por fonte)
 │   ├── types.ts              # AlertProvider, NormalizedEvent
 │   ├── catalog.ts            # ids, rótulos e tabelas de equivalência de TODAS as fontes (dados estáticos, sem ambiente)
-│   ├── index.ts              # registro: id → adaptador, com o segredo `<ID>_WEBHOOK_SECRET` de cada fonte
-│   ├── auth.ts, common.ts    # autenticação (cabeçalho / Basic) e utilitários compartilhados dos adaptadores
+│   ├── index.ts              # registro: id → adaptador (`getProvider`)
+│   ├── auth.ts, common.ts    # autenticação do webhook único (cabeçalho / Basic) e utilitários dos adaptadores
 │   ├── datadog/              # webhook (index.ts), mute (api.ts), listagem (source.ts), equivalência de estados (states.ts)
 │   ├── cloudwatch/           # alarmes via assinatura HTTPS do SNS (com confirmação da assinatura)
 │   ├── appdynamics/          # ação de requisição HTTP de políticas
@@ -47,9 +47,10 @@ Dockerfile, compose.yaml
 ## Fluxo do webhook
 
 ```text
-POST /api/webhooks/<fonte>      (datadog | cloudwatch | appdynamics | generic)
-  → provider.authenticate (segredo da fonte, tempo constante)          401 se falhar
+POST /api/webhooks                  (um endpoint e um segredo para todas as ferramentas)
+  → authenticateWebhook (X-Webhook-Secret ou Basic, tempo constante)   401 se falhar
   → readJson (limite 64 KB)                                            413 / 400
+  → sourceOf(corpo): `source`, envelope do SNS ou genérico            400 se a fonte não existe
   → provider.handshake (opcional: confirmação de assinatura do SNS)    200 "handshake"
   → provider.parse → NormalizedEvent                                   400 se inválido
   → ingestEvent (1 transação):
@@ -67,22 +68,22 @@ POST /api/webhooks/<fonte>      (datadog | cloudwatch | appdynamics | generic)
 
 ## Fontes de alertas (Datadog, CloudWatch, AppDynamics, genérica)
 
-O domínio só conhece `NormalizedEvent`; cada fonte é um adaptador em `src/providers/<id>/` que **autentica**, **interpreta** o payload e **traduz** o estado dela para os estados daqui (a tabela de equivalência é dado, mostrado na tela **Máquina de estados**). Cada fonte tem endpoint (`/api/webhooks/<id>`) e segredo próprios (`<ID>_WEBHOOK_SECRET`): vazar o de uma não permite enviar eventos como outra. A identidade de um alerta é `(fonte, ID externo)`: o mesmo número em duas fontes são alertas diferentes. Estudos e riscos: `docs/integrations/<fonte>.md`. **Nenhum adaptador foi validado contra o sistema real.**
+O domínio só conhece `NormalizedEvent`; cada fonte é um adaptador em `src/providers/<id>/` que **autentica**, **interpreta** o payload e **traduz** o estado dela para os estados daqui (a tabela de equivalência é dado, mostrado na tela **Máquina de estados**). **O webhook é um só** (`POST /api/webhooks`, segredo `WEBHOOK_SECRET`): quem diz qual adaptador traduz o evento é o campo `source` do corpo (ou o envelope do SNS, que não é personalizável), então trocar de ferramenta é trocar o modelo de payload dela, sem mudar URL nem segredo. Consequência assumida: um segredo só; quem o conhece pode enviar eventos como qualquer fonte. A identidade de um alerta é `(fonte, ID externo)`: o mesmo número em duas fontes são alertas diferentes. Estudos e riscos: `docs/integrations/<fonte>.md`. **Nenhum adaptador foi validado contra o sistema real.**
 
-| Fonte | Autenticação | ID do alerta | Estados | Ações no provedor |
+| Fonte | `source` | ID do alerta | Estados | Ações no provedor |
 |---|---|---|---|---|
-| Datadog | `X-Webhook-Secret` | número do monitor | `overall_state` e transição | silenciar, reconciliar |
-| CloudWatch | Basic (segredo = senha) na URL do SNS | ARN do alarme | `OK`, `ALARM`, `INSUFFICIENT_DATA` | nenhuma |
-| AppDynamics | `X-Webhook-Secret` | `aplicação/regra de saúde` | `eventType` da política | nenhuma |
-| Genérica | `X-Webhook-Secret` | `monitor_id` | `state` já canônico | nenhuma |
+| Datadog | `datadog` | número do monitor | `overall_state` e transição | silenciar, reconciliar |
+| CloudWatch | (envelope do SNS) | ARN do alarme | `OK`, `ALARM`, `INSUFFICIENT_DATA` | nenhuma |
+| AppDynamics | `appdynamics` | `aplicação/regra de saúde` | `eventType` da política | nenhuma |
+| Genérica | `generic` (ou omitido) | `monitor_id` | `state` já canônico | nenhuma |
 
 **Adicionar uma fonte** (o domínio, a auditoria, as remediações e as telas não mudam):
 
-1. `src/providers/<id>/index.ts`: `create<Id>Provider(options)` devolvendo `AlertProvider` (`authenticate`, `parse`; `handshake` só se o protocolo tiver mensagens que não são eventos; `control`/`source` só se houver API de escrita/leitura). Reaproveite `auth.ts` e `common.ts`.
+1. `src/providers/<id>/index.ts`: `create<Id>Provider(options)` devolvendo `AlertProvider` (`parse`; `handshake` só se o protocolo tiver mensagens que não são eventos; `control`/`source` só se houver API de escrita/leitura). A autenticação não é do adaptador (é a do webhook único); reaproveite `common.ts`.
 2. `src/providers/<id>/states.ts`: tabela de equivalência (fonte → estado ou `null` = manter). Entradas inferidas devem dizer isso no `reason`.
-3. `src/providers/catalog.ts`: acrescente o id em `PROVIDER_IDS` e uma entrada em `PROVIDERS` (rótulo, variável do segredo, autenticação, linhas e notas).
-4. `src/providers/index.ts`: uma linha em `BUILDERS`. O segredo é lido de `<ID>_WEBHOOK_SECRET`.
-5. Testes do adaptador (fixtures no formato documentado), `.env.example`, `compose.yaml`, uma fonte em `simulator/src/sources.mjs` e `docs/integrations/<id>.md` (o que foi lido, o que **não** foi verificado).
+3. `src/providers/catalog.ts`: acrescente o id em `PROVIDER_IDS` e uma entrada em `PROVIDERS` (rótulo, campo de estado, linhas e notas). O id é o valor de `source` no payload.
+4. `src/providers/index.ts`: uma linha em `BUILDERS`. Nenhum segredo nem rota nova.
+5. Testes do adaptador (fixtures no formato documentado), uma fonte em `simulator/src/sources.mjs` e `docs/integrations/<id>.md` (o que foi lido, o que **não** foi verificado).
 
 ## Dados
 
@@ -137,7 +138,7 @@ Um alerta pode acionar outra ferramenta ao entrar em estados escolhidos (padrão
 
 - **A aplicação só pode ser alcançada através do SSO.** Quem a alcança diretamente escolhe o próprio nome (o cabeçalho é confiável por convenção) e pode fazer tudo: criar alertas e jornadas, cadastrar remediações (chamadas de saída, limitadas pela allowlist) e **silenciar monitores no Datadog**. No compose as portas ficam em `127.0.0.1`; em outro ambiente, restrinja a rede para que só o proxy do SSO chegue.
 - O proxy deve **sobrescrever** o cabeçalho de identidade em toda requisição (nunca repassar o do cliente).
-- Os webhooks (`/api/webhooks/*`) têm autenticação própria, um segredo por fonte (`DATADOG_WEBHOOK_SECRET`, `CLOUDWATCH_WEBHOOK_SECRET`, `APPDYNAMICS_WEBHOOK_SECRET`, `GENERIC_WEBHOOK_SECRET`), e devem ficar fora do SSO, já que quem chama são as ferramentas. A única chamada de saída que um webhook provoca é a confirmação da assinatura do SNS, restrita a `https://sns.<região>.amazonaws.com`.
+- O webhook (`/api/webhooks`) tem autenticação própria, um único `WEBHOOK_SECRET` para todas as ferramentas, e deve ficar fora do SSO, já que quem chama são as ferramentas. A única chamada de saída que um webhook provoca é a confirmação da assinatura do SNS, restrita a `https://sns.<região>.amazonaws.com`.
 - Sem papéis: todo usuário autenticado pode operar. Papéis (leitura/operação) ficam para depois do MVP.
 
 ## Simulador do Datadog (`simulator/`)

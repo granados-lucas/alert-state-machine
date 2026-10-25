@@ -15,10 +15,6 @@ export type EquivalenceRow = { raw: string; state: AlertState | null; reason: st
 export type ProviderInfo = {
   id: ProviderId;
   label: string;
-  /** Variável de ambiente com o segredo do webhook desta fonte. */
-  secretEnv: string;
-  /** Como a fonte se autentica no webhook (texto para a tela e a documentação). */
-  auth: string;
   /** Campo da fonte que carrega o estado (cabeçalho da tabela de equivalência). */
   sourceField: string;
   rows: EquivalenceRow[];
@@ -34,8 +30,6 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
   datadog: {
     id: "datadog",
     label: "Datadog",
-    secretEnv: "DATADOG_WEBHOOK_SECRET",
-    auth: "cabeçalho X-Webhook-Secret",
     sourceField: "overall_state (API)",
     rows: rowsOf(OVERALL_STATE_EQUIVALENCE),
     notes: [
@@ -46,18 +40,14 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
   cloudwatch: {
     id: "cloudwatch",
     label: "Amazon CloudWatch",
-    secretEnv: "CLOUDWATCH_WEBHOOK_SECRET",
-    auth: "HTTP Basic na URL da assinatura do SNS (o segredo é a senha)",
     sourceField: "NewStateValue (alarme)",
     rows: rowsOf(ALARM_STATE_EQUIVALENCE),
-    notes: ["O CloudWatch não tem estado de aviso: nunca produz Aviso. A aplicação vem do texto service:nome na descrição do alarme e a prioridade de priority:N."],
+    notes: ["O corpo do SNS não é personalizável, então não leva o campo source: o envelope é reconhecido. O CloudWatch não tem estado de aviso: nunca produz Aviso. A aplicação vem do texto service:nome na descrição do alarme e a prioridade de priority:N."],
     validated: false,
   },
   appdynamics: {
     id: "appdynamics",
     label: "AppDynamics",
-    secretEnv: "APPDYNAMICS_WEBHOOK_SECRET",
-    auth: "cabeçalho X-Webhook-Secret (configurado na ação HTTP)",
     sourceField: "eventType (política)",
     rows: rowsOf(EVENT_TYPE_EQUIVALENCE),
     notes: ["Tipo de evento desconhecido mantém o estado atual. O AppDynamics não tem estado \"sem dados\" nas políticas; a prioridade é fixa no modelo da ação (um modelo por prioridade)."],
@@ -66,14 +56,22 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
   generic: {
     id: "generic",
     label: "Genérico (JSON canônico)",
-    secretEnv: "GENERIC_WEBHOOK_SECRET",
-    auth: "cabeçalho X-Webhook-Secret",
     sourceField: "state",
     rows: ALERT_STATES.map((state) => ({ raw: state, state, reason: "O estado informado é aplicado como está." })),
     notes: ["Para qualquer fonte sem adaptador: o remetente já informa o estado equivalente."],
     validated: false,
   },
 };
+
+/**
+ * Qual fonte enviou o evento do webhook único: o campo `source` do corpo; sem ele, o envelope do SNS
+ * (CloudWatch não deixa personalizar o corpo); sem nenhum dos dois, o formato genérico. Valor desconhecido: undefined.
+ */
+export function sourceOf(body: unknown): ProviderId | undefined {
+  const record = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+  if (record.source === undefined) return typeof record.Type === "string" && typeof record.TopicArn === "string" ? "cloudwatch" : "generic";
+  return (PROVIDER_IDS as readonly string[]).includes(record.source as string) ? (record.source as ProviderId) : undefined;
+}
 
 export const listProviderInfo = () => PROVIDER_IDS.map((id) => PROVIDERS[id]);
 

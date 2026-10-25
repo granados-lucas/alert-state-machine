@@ -10,11 +10,13 @@ import type { Db } from "./db-types";
  * sobrevive a reinícios e vale com mais de uma instância. Se o banco falhar, `db.up` é falso e o resto fica vazio;
  * quem consulta continua recebendo resposta (o sinal é justamente "banco fora").
  */
-export type ProviderStatus = { id: string; webhook: boolean; control: boolean; source: boolean };
+export type ProviderStatus = { id: string; control: boolean; source: boolean };
 export type PoolStats = { total: number; idle: number; waiting: number } | null;
 
 export type Telemetry = {
   db: { up: boolean; latencyMs: number | null };
+  /** O segredo do webhook único está configurado e válido. */
+  webhookEnabled: boolean;
   pool: PoolStats;
   alertsByState: Record<string, number>;
   providers: (ProviderStatus & { lastEventAt: Date | null })[];
@@ -25,9 +27,10 @@ export type Telemetry = {
 
 const RECENT_REMEDIATIONS = 50;
 
-export async function readTelemetry(db: Db | undefined, options: { providers: ProviderStatus[]; pool?: PoolStats }): Promise<Telemetry> {
+export async function readTelemetry(db: Db | undefined, options: { providers: ProviderStatus[]; webhookEnabled?: boolean; pool?: PoolStats }): Promise<Telemetry> {
   const empty: Telemetry = {
     db: { up: false, latencyMs: null },
+    webhookEnabled: options.webhookEnabled ?? false,
     pool: options.pool ?? null,
     alertsByState: Object.fromEntries(ALERT_STATES.map((s) => [s, 0])),
     providers: options.providers.map((p) => ({ ...p, lastEventAt: null })),
@@ -81,11 +84,7 @@ export function toGauges(t: Telemetry, info: { version: string; startedAt: Date;
       help: "Instante do último evento aplicado, por fonte (0 = nenhum). Alerte sobre time() - este valor.",
       samples: PROVIDER_IDS.map((id) => ({ labels: { provider: id }, value: Math.floor((t.providers.find((p) => p.id === id)?.lastEventAt?.getTime() ?? 0) / 1000) })),
     },
-    {
-      name: "provider_webhook_enabled",
-      help: "1 se o segredo do webhook da fonte está configurado.",
-      samples: t.providers.map((p) => ({ labels: { provider: p.id }, value: p.webhook ? 1 : 0 })),
-    },
+    { name: "webhook_enabled", help: "1 se o segredo do webhook único está configurado (0 = o webhook responde 401 a tudo).", samples: [{ value: t.webhookEnabled ? 1 : 0 }] },
     { name: "mute_operations_pending", help: "Operações de silêncio sem desfecho gravado.", samples: [{ value: t.pendingMutes.count }] },
     {
       name: "mute_operations_oldest_pending_seconds",
