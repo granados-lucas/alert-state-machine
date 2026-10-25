@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, lt, sql } from "drizzle-orm";
-import { alerts, applications, auditLog, journeyApplications, journeys, remediationRuns, remediations } from "@/db/schema";
+import { alerts, applications, auditLog, journeyApplications, journeys, muteOperations, remediationRuns, remediations } from "@/db/schema";
 import type { AlertState } from "@/domain/alert-machine";
 import { bySeverityDesc, byHealthAsc, mergeBuckets, summarize, type Bucket, type StateCounts } from "@/domain/application-status";
 import type { Db } from "./db-types";
@@ -152,7 +152,7 @@ export async function getAlertDetail(db: Db, id: number) {
     .innerJoin(applications, eq(applications.id, alerts.applicationId))
     .where(eq(alerts.id, id));
   if (!alert) return null;
-  const [remediationList, runs, audit, memberOf] = await Promise.all([
+  const [remediationList, runs, audit, memberOf, pendingMute] = await Promise.all([
     db.select().from(remediations).where(eq(remediations.alertId, id)).orderBy(remediations.id),
     db.select().from(remediationRuns).where(eq(remediationRuns.alertId, id)).orderBy(desc(remediationRuns.id)).limit(50),
     db.select().from(auditLog).where(eq(auditLog.alertId, id)).orderBy(desc(auditLog.id)).limit(200),
@@ -162,8 +162,9 @@ export async function getAlertDetail(db: Db, id: number) {
       .innerJoin(journeys, eq(journeys.id, journeyApplications.journeyId))
       .where(eq(journeyApplications.applicationId, alert.applicationId))
       .orderBy(asc(journeys.name)),
+    db.select().from(muteOperations).where(and(eq(muteOperations.alertId, id), eq(muteOperations.status, "pending"))).limit(1),
   ]);
-  return { alert, remediations: remediationList, runs, audit, journeys: memberOf };
+  return { alert, remediations: remediationList, runs, audit, journeys: memberOf, pendingMute: pendingMute[0] ?? null };
 }
 
 export async function getApplicationDetail(db: Db, name: string) {

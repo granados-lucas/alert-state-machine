@@ -69,7 +69,7 @@ A aplicação passou a **escrever** no Datadog: silenciar e reativar um monitor.
 
 **Configuração:** `DD_API_KEY` e `DD_APP_KEY` (cabeçalhos `DD-API-KEY` e `DD-APPLICATION-KEY`), `DD_SITE` (padrão `datadoghq.com`; lista fechada de sites) e, só para testes, `DD_API_BASE_URL`. Sem as duas chaves o recurso fica desligado (503 na API e aviso na tela). O destino é sempre `https://api.<site>`; as chaves nunca aparecem em logs, erros ou auditoria.
 
-**Comportamento da aplicação:** exige **motivo** e **prazo** (a identidade vem do SSO); chama o Datadog **antes** de gravar localmente (se o Datadog recusar, nada muda e a tentativa fica na auditoria como `monitor_mute_failed`); registra `monitor_muted`/`monitor_unmuted` com ator, motivo, prazo, escopo e estado informado. Erros do Datadog: 404 vira 404; qualquer outro (403, 429, rede) vira 502 com a mensagem curta do Datadog. O alerta **continua contando** na saúde da jornada e aparece com a etiqueta "Silenciado".
+**Comportamento da aplicação:** exige **motivo** e **prazo** (a identidade vem do SSO); grava a intenção (`mute_operations`), chama o Datadog e só então grava o resultado numa transação (se o Datadog recusar, nada muda e a tentativa fica na auditoria como `monitor_mute_failed`; se o processo cair no meio, a operação é reexecutada pela reconciliação ou por `POST /api/mute-operations/recover`, ver `docs/architecture.md`); registra `monitor_muted`/`monitor_unmuted` com ator, motivo, prazo, escopo e estado informado. Erros do Datadog: 404 vira 404; qualquer outro (403, 429, rede) vira 502 com a mensagem curta do Datadog. O alerta **continua contando** na saúde da jornada e aparece com a etiqueta "Silenciado".
 
 ### Riscos e pontos não verificados
 
@@ -78,7 +78,8 @@ A aplicação passou a **escrever** no Datadog: silenciar e reativar um monitor.
 3. **Obsolescência:** o campo `silenced` do modelo de monitor está marcado como obsoleto; os endpoints `mute`/`unmute` do monitor constam sem aviso de descontinuação. Se forem descontinuados, a troca é só no adaptador (`src/providers/datadog/api.ts`) para Downtimes v2.
 4. **Sem `end`:** não verificado o que o Datadog faz sem `end`; por isso a aplicação nunca silencia sem prazo.
 5. **Respostas de erro 400/403/404/429:** formato não detalhado nas páginas lidas; a aplicação lê `errors[0]` se existir.
-6. **Nunca testado contra o Datadog real.** Todos os testes usam o Datadog simulado (`simulator/`) e mocks. Valide com um monitor de teste e chaves de uma conta de homologação antes de usar em produção.
+6. **Idempotência do mute/unmute não verificada:** a recuperação repete a chamada com os mesmos parâmetros e assume que o resultado é o mesmo.
+   **Nunca testado contra o Datadog real.** Todos os testes usam o Datadog simulado (`simulator/`) e mocks. Valide com um monitor de teste e chaves de uma conta de homologação antes de usar em produção.
 7. **Permissões:** a chave de aplicação precisa de `monitors_write`. Use uma chave de serviço com o menor escopo possível; qualquer usuário que passe pelo SSO passa a poder silenciar qualquer monitor ligado a essa chave (a aplicação não restringe por papel).
 
 ## Equivalência de estados (Datadog -> aplicação)

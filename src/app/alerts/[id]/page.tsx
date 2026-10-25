@@ -46,7 +46,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   if (!Number.isSafeInteger(id) || id <= 0) notFound();
   const detail = await getAlertDetail(database(), id);
   if (!detail) notFound();
-  const { alert, remediations, runs, audit, journeys } = detail;
+  const { alert, remediations, runs, audit, journeys, pendingMute } = detail;
   const muted = isMuted(alert.mutedUntil);
   const reported = alert.provider === "datadog" && alert.providerState ? resolveOverallState(alert.providerState) : null;
   const canMute = alert.provider === "datadog" && getDatadogApiConfig() !== undefined;
@@ -107,6 +107,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             : null
         }
         expiredAt={!muted && alert.mutedUntil ? alert.mutedUntil.toISOString() : null}
+        pending={pendingMute ? { action: pendingMute.action, since: pendingMute.createdAt.toISOString() } : null}
       />
 
       <section aria-labelledby="rem" className="flex flex-col gap-3">

@@ -164,6 +164,19 @@ describe("reconcile", () => {
     await reconcile(db, opts({ remediate: false }), "ana", "manual", deps(provider([[mon(b.externalId, "Alert")]]).provider, { runRemediations: none }));
     expect(none).not.toHaveBeenCalled();
   });
+
+  it("conclui os silêncios pendentes antes de comparar, exceto em simulação", async () => {
+    const a = await seed("ok");
+    const recoverMutes = vi.fn().mockResolvedValue({ found: 1, succeeded: 1, failed: 0, errors: 0 });
+    const { provider: p } = provider([[mon(a.externalId, "OK")]]);
+    const run = await reconcile(db, opts(), "ana", "manual", deps(p, { recoverMutes }));
+    expect(recoverMutes).toHaveBeenCalledOnce();
+    expect(run.summary.mutes).toEqual({ found: 1, succeeded: 1, failed: 0, errors: 0 });
+
+    recoverMutes.mockClear();
+    await reconcile(db, opts({ dryRun: true }), "ana", "manual", deps(provider([[mon(a.externalId, "OK")]]).provider, { recoverMutes }));
+    expect(recoverMutes).not.toHaveBeenCalled();
+  });
 });
 
 describe("limites de uso do provedor", () => {

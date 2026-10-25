@@ -25,6 +25,8 @@ export const alertState = pgEnum("alert_state", ALERT_STATES);
 export const eventOutcome = pgEnum("event_outcome", ["applied", "unchanged", "stale", "ignored"]);
 export const remediationMode = pgEnum("remediation_mode", ["webhook", "api"]);
 export const runStatus = pgEnum("run_status", ["success", "failed", "skipped"]);
+export const muteAction = pgEnum("mute_action", ["mute", "unmute"]);
+export const muteOperationStatus = pgEnum("mute_operation_status", ["pending", "succeeded", "failed"]);
 export const reconciliationStatus = pgEnum("reconciliation_status", ["running", "succeeded", "partial", "failed"]);
 export const auditKind = pgEnum("audit_kind", [
   "alert_created",
@@ -216,6 +218,34 @@ export const reconciliationRuns = pgTable(
   (t) => [
     uniqueIndex("reconciliation_runs_one_running_idx").on(t.provider).where(sql`${t.status} = 'running'`),
     index("reconciliation_runs_started_at_idx").on(t.startedAt),
+  ],
+);
+
+// Intenção gravada ANTES de chamar o provedor (silenciar/reativar): se o processo cair entre a chamada e
+// a gravação local, a operação fica "pending" e é reexecutada (a chamada é idempotente). No máximo uma
+// pendente por alerta (índice parcial).
+export const muteOperations = pgTable(
+  "mute_operations",
+  {
+    id: id(),
+    alertId: fk("alert_id").notNull().references(() => alerts.id),
+    action: muteAction().notNull(),
+    status: muteOperationStatus().notNull().default("pending"),
+    actor: text().notNull(),
+    reason: text(),
+    minutes: integer(),
+    until: at("until"),
+    scope: text(),
+    allScopes: boolean("all_scopes").notNull().default(false),
+    // true = concluída por reexecução (a primeira tentativa não chegou a ser registrada).
+    recovered: boolean().notNull().default(false),
+    error: text(),
+    createdAt: at("created_at").notNull().defaultNow(),
+    finishedAt: at("finished_at"),
+  },
+  (t) => [
+    uniqueIndex("mute_operations_one_pending_idx").on(t.alertId).where(sql`${t.status} = 'pending'`),
+    index("mute_operations_alert_id_idx").on(t.alertId, t.id),
   ],
 );
 

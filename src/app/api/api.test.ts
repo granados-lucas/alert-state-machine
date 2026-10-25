@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { alerts, remediationRuns } from "@/db/schema";
+import { alerts, muteOperations, remediationRuns } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import type { Db } from "@/server/db-types";
 
@@ -21,6 +21,8 @@ const remediationRoute = await import("./alerts/[id]/remediations/[remediationId
 const applicationsRoute = await import("./applications/route");
 const muteRoute = await import("./alerts/[id]/mute/route");
 const unmuteRoute = await import("./alerts/[id]/unmute/route");
+const muteOperationsRoute = await import("./mute-operations/route");
+const muteOperationsRecoverRoute = await import("./mute-operations/recover/route");
 const reconciliationRoute = await import("./reconciliation/route");
 const reconciliationRunRoute = await import("./reconciliation/[id]/route");
 const journeysRoute = await import("./journeys/route");
@@ -290,6 +292,21 @@ describe("silenciar monitor no Datadog", () => {
     expect((await forbidden.json()).error).toBe("Datadog responded 403: Forbidden");
     const detail = await (await alertRoute.GET(req("/x", { headers: admin }), ctx({ id: String(id) }))).json();
     expect(detail.audit.filter((a: { kind: string }) => a.kind === "monitor_mute_failed")).toHaveLength(2);
+  });
+
+  it("lista e recupera operações de silêncio pendentes", async () => {
+    enableDatadog();
+    const id = await newAlert("4444");
+    await db.insert(muteOperations).values({ alertId: id, action: "mute", actor: "ana", reason: "deploy", minutes: 60, until: new Date(Date.now() + 3_600_000), createdAt: new Date(Date.now() - 5 * 60_000) });
+    const listed = await (await muteOperationsRoute.GET()).json();
+    expect(listed.pending.map((o: { alertId: number }) => o.alertId)).toContain(id);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(monitorResponse("OK")));
+    const recovered = await muteOperationsRecoverRoute.POST();
+    expect(recovered.status).toBe(200);
+    expect(await recovered.json()).toMatchObject({ found: expect.any(Number), succeeded: expect.any(Number) });
+    const after = await (await muteOperationsRoute.GET()).json();
+    expect(after.pending.map((o: { alertId: number }) => o.alertId)).not.toContain(id);
   });
 
   it("alerta de provedor sem suporte responde 501", async () => {

@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { getRemediationAllowedHosts } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { getProvider } from "@/providers";
+import { recoverMuteOperations } from "./muting";
 import type { ReconcileDeps } from "./reconcile";
 import { runRemediations, type RemediationDeps } from "./remediation";
 
@@ -19,6 +20,7 @@ export const remediationDeps = (): RemediationDeps => ({
 export const reconcileDeps = (db: ReturnType<typeof getDb>): ReconcileDeps => ({
   getProvider,
   runRemediations: (pending) => runRemediations(db, pending, remediationDeps()),
+  recoverMutes: () => recoverMuteOperations(db, { getProvider }),
 });
 
 /** Executa depois de responder (Next `after`); fora de uma requisição (testes, scripts) roda direto. */

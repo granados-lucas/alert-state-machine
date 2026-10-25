@@ -23,9 +23,11 @@ type Props = {
   mute: { until: string; scope: string | null; reason: string | null; by: string | null; at: string | null } | null;
   /** Fim de um silêncio anterior que já expirou (informativo). */
   expiredAt: string | null;
+  /** Operação sem desfecho gravado (queda entre o provedor e o banco): será reexecutada. */
+  pending: { action: string; since: string } | null;
 };
 
-export function MuteControl({ alertId, provider, enabled, mute, expiredAt }: Props) {
+export function MuteControl({ alertId, provider, enabled, mute, expiredAt, pending: pendingOp }: Props) {
   const router = useRouter();
   const [minutes, setMinutes] = useState(60);
   const [reason, setReason] = useState("");
@@ -108,6 +110,12 @@ export function MuteControl({ alertId, provider, enabled, mute, expiredAt }: Pro
               <input type="checkbox" className="size-4 accent-accent" checked={allScopes} onChange={(e) => setAllScopes(e.target.checked)} />
               Limpar o silêncio em todos os escopos
             </label>
+          )}
+          {pendingOp && (
+            <p role="status" className="rounded-2xl border border-warn/35 bg-warn/10 p-3 text-sm text-warn">
+              Há uma operação de {pendingOp.action === "mute" ? "silenciar" : "reativar"} sem desfecho gravado desde {formatTime(pendingOp.since)}. Ela é reexecutada
+              automaticamente (na próxima reconciliação ou em <code>POST /api/mute-operations/recover</code>); novas operações neste alerta aguardam.
+            </p>
           )}
           {errors.length > 0 && (
             <ul role="alert" className="list-disc rounded-2xl border border-alert/40 bg-alert/10 p-4 pl-8 text-sm text-alert-fg">

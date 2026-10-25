@@ -29,6 +29,8 @@ export type ReconcileDeps = {
   sleep?: (ms: number) => Promise<void>;
   now?: () => Date;
   runRemediations?: (pending: PendingRemediation[]) => Promise<void>;
+  /** Reexecuta operações de silêncio que ficaram pendentes (queda entre o provedor e o banco). */
+  recoverMutes?: () => Promise<{ found: number; succeeded: number; failed: number; errors: number }>;
   maxDurationMs?: number;
 };
 
@@ -54,6 +56,7 @@ const emptySummary = () => ({
   skipped: 0, // monitor desconhecido com createMissing desligado
   missing: 0, // alertas ativos que o provedor não listou (só relatados)
   details: [] as Detail[],
+  mutes: null as null | { found: number; succeeded: number; failed: number; errors: number },
 });
 
 const isUniqueViolation = (error: unknown) => {
@@ -104,6 +107,8 @@ export async function executeReconciliation(db: Db, runId: number, input: Reconc
     const provider = deps.getProvider(input.provider);
     if (!provider?.source) throw new NotConfiguredError("the provider API is not configured");
     const source = provider.source;
+    // Antes de comparar estados, conclui silêncios que ficaram pendentes: eles mudam o que o provedor informa.
+    if (!input.dryRun && deps.recoverMutes) summary.mutes = await deps.recoverMutes();
     const seen = new Set<string>();
     let complete = false;
 

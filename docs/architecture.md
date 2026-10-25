@@ -20,7 +20,7 @@ src/
 │   ├── ingest.ts             # webhook → transação idempotente e serializada por alerta
 │   ├── alerts.ts             # criar/atualizar/arquivar alerta, remediações (com auditoria)
 │   ├── remediation.ts        # validação, allowlist, execução, limite de concorrência
-│   ├── muting.ts             # silenciar/reativar monitor no provedor (com auditoria e sincronização de estado)
+│   ├── muting.ts             # silenciar/reativar monitor no provedor: intenção → provedor → resultado, com recuperação
 │   ├── reconcile.ts          # reconciliação: lê os monitores do provedor e corrige divergências (respeita limite de uso)
 │   ├── journeys.ts           # criar/editar/trocar aplicações/remover jornada (com auditoria)
 │   ├── queries.ts            # mapa de jornadas, listagem paginada, detalhes
@@ -31,7 +31,7 @@ src/
 ├── components/               # journey-map (mapa), journey-form, alert-graph (máquina, React Flow), alert-form, ui
 ├── db/                       # schema (8 tabelas), pool pg
 └── test/db.ts                # PGlite com as migrações reais, só para testes
-drizzle/                      # 0000_init, 0001_audit_immutable (trigger), 0002_drop_dependencies, 0003_journeys, 0004_monitor_mute, 0005_provider_state, 0006_reconciliation
+drizzle/                      # 0000_init, 0001_audit_immutable (trigger), 0002_drop_dependencies, 0003_journeys, 0004_monitor_mute, 0005_provider_state, 0006_reconciliation, 0007_mute_operations
 simulator/                    # APLICAÇÃO SEPARADA que simula o Datadog (ver abaixo)
 Dockerfile, compose.yaml
 ```
@@ -68,13 +68,22 @@ POST /api/webhooks/datadog
 | `reconciliation_runs` | Cada execução da reconciliação: opções, resumo, últimos cabeçalhos de limite, erro. Índice parcial garante no máximo uma `running` por provedor |
 | `alerts.provider_state*` | Último `overall_state` bruto lido da API (ex.: `Skipped`) e quando |
 | `alerts.muted_*` | Silêncio aplicado no provedor por esta aplicação (até quando, escopo, motivo, quem) |
+| `mute_operations` | Intenção de silenciar/reativar gravada **antes** de chamar o provedor (`pending` → `succeeded`/`failed`, `recovered` se concluída por reexecução). Índice parcial: no máximo uma `pending` por alerta |
 | `audit_log` | Trilha **somente de inserção** (trigger bloqueia UPDATE/DELETE/TRUNCATE): criação, alterações com antes/depois, mudanças de estado, remediações, jornadas |
 
 Chaves `bigint` por identidade, `timestamptz`, FKs indexadas, índice parcial `(application_id, state) WHERE archived_at IS NULL` para o mapa e paginação por cursor (`id` decrescente). Migrações: `pnpm db:generate`, revisão do SQL e `pnpm db:migrate`; no Docker o serviço `migrate` roda uma vez antes do app.
 
 ## Ações no provedor: silenciar monitor
 
-`AlertProvider.control` (porta `MonitorControl`: `mute`/`unmute`) existe só quando há credenciais; o adaptador do Datadog usa `POST /api/v1/monitor/{id}/mute|unmute` (ver `docs/integrations/datadog.md`). Fluxo de `muteAlert`: validar (alerta existe, não arquivado, provedor suportado e configurado) → **chamar o provedor** → gravar `muted_*` no alerta + auditoria `monitor_muted` → aplicar o estado devolvido pelo provedor como evento sintético (`ingestEvent`, que também aciona remediações). Falha do provedor: auditoria `monitor_mute_failed`, nada muda, erro 502/404. Salvaguardas: prazo obrigatório (máx. 7 dias), motivo obrigatório, destino fixo `https://api.<site>` (lista fechada de sites), sem redirecionamento, timeout de 10 s, id do monitor numérico, chaves fora de logs/erros. Limitação: chamada ao provedor e gravação local não são atômicas; se a gravação falhar depois de o Datadog aceitar, o silêncio existe lá e não aqui (o erro é registrado no log).
+`AlertProvider.control` (porta `MonitorControl`: `mute`/`unmute`) existe só quando há credenciais; o adaptador do Datadog usa `POST /api/v1/monitor/{id}/mute|unmute` (ver `docs/integrations/datadog.md`). Salvaguardas: prazo obrigatório (máx. 7 dias), motivo obrigatório, destino fixo `https://api.<site>` (lista fechada de sites), sem redirecionamento, timeout de 10 s, id do monitor numérico, chaves fora de logs/erros.
+
+**Consistência (silenciar atômico).** Não existe transação entre o Datadog e o PostgreSQL; o desenho garante que a divergência nunca fica silenciosa. Fluxo de `muteAlert`/`unmuteAlert`:
+
+1. Valida (alerta existe, não arquivado, provedor suportado e configurado) e, **numa transação que trava o alerta**, grava a intenção em `mute_operations` (`pending`). Se já há uma pendente com menos de 60 s, responde 409; se é mais antiga, conclui-a antes (passo de recuperação abaixo).
+2. Chama o provedor.
+3. **Numa única transação**: grava `muted_*` no alerta, fecha a operação (`succeeded`) e audita `monitor_muted`/`monitor_unmuted`. Se o provedor recusa: fecha como `failed` e audita `monitor_mute_failed` (o alerta não muda). Depois, aplica o estado devolvido como evento sintético (`ingestEvent`, que também aciona remediações).
+
+Se o processo cair entre 2 e 3, o Datadog já aplicou, mas a operação continua `pending`. A **recuperação** (`recoverMuteOperations`, chamada a cada reconciliação e por `POST /api/mute-operations/recover`; `GET /api/mute-operations` lista as pendentes) repete a chamada ao provedor e conclui a gravação (`recovered = true` na operação e na auditoria). Um silêncio pendente cujo prazo já passou não é repetido: fecha como `failed`. A tela do alerta avisa quando há uma operação pendente. Premissa **não verificada**: repetir `mute` com o mesmo `end` (e `unmute`) no Datadog é idempotente; o código foi escrito assim, mas isso não foi confirmado numa conta real. Dois processos recuperando a mesma operação ao mesmo tempo repetem a chamada ao provedor (inofensivo se a premissa valer), mas só quem fecha a operação (`UPDATE … WHERE status = 'pending'`) grava o resultado e a auditoria.
 
 ## Reconciliação
 

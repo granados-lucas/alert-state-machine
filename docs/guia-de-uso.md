@@ -221,6 +221,7 @@ Pré-requisito: `DD_API_KEY`, `DD_APP_KEY` (e `DD_SITE`) configurados e `DD_API_
 **Criar as chaves (Datadog):** uma chave de API e uma chave de aplicação, de preferência de uma conta de serviço, com o menor escopo possível: `monitors_write` para silenciar e `monitors_read` para listar (reconciliar). ⚠ Os cabeçalhos usados são `DD-API-KEY` e `DD-APPLICATION-KEY` (esquema usual; não verificado nas páginas lidas).
 
 - **Silenciar** (cartão "Silêncio no Datadog" na página do alerta): escolha a duração (15 min a 7 dias, **obrigatória**), o motivo (**obrigatório**, fica na auditoria) e, se quiser, um escopo (ex.: `host:app1`). Durante o silêncio o Datadog não envia notificações, então o estado aqui pode ficar desatualizado; ao silenciar e ao remover, a aplicação aplica o estado que o Datadog informa. O alerta continua contando na saúde da jornada, com a etiqueta "Silenciado".
+- **Operação pendente:** se a aplicação cair depois de o Datadog aceitar o silêncio e antes de gravá-lo, a página do alerta mostra o aviso "operação sem desfecho gravado". Ela é concluída sozinha na próxima reconciliação (ou com `POST /api/mute-operations/recover`); enquanto isso, novos silêncios nesse alerta respondem `409` por até 1 minuto.
 - **Reconciliar** (tela **Reconciliação**, ou `scripts/reconcile.mjs`): compara todos os alertas com o estado real dos monitores, corrige divergências (webhook perdido, monitor silenciado), **cria alertas dos monitores novos** (a forma mais rápida de importar tudo) e aponta os que sumiram. Comece **simulando** (a opção vem marcada). Respeita o limite de uso da API do Datadog. Para rodar periodicamente: `node scripts/reconcile.mjs --url http://app:3000 --every 300` (mais exemplos no README).
 
 ## 8. Conferir o resultado
@@ -245,6 +246,7 @@ Pré-requisito: `DD_API_KEY`, `DD_APP_KEY` (e `DD_SITE`) configurados e `DD_API_
 | Estado diferente do Datadog | webhook perdido ou monitor silenciado | reconciliar; o detalhe do alerta mostra o estado bruto lido |
 | Silenciar responde `503` | chaves do Datadog não configuradas | definir `DD_API_KEY` e `DD_APP_KEY` |
 | Silenciar responde `502` | o Datadog recusou (403 sem permissão, 429 limite de uso, rede) | ver a mensagem; a tentativa fica na auditoria como falha |
+| Silenciar responde `409` | há uma operação de silêncio em andamento ou pendente neste alerta | aguardar 1 minuto, ou `POST /api/mute-operations/recover` |
 | Silenciar responde `404` | o monitor não existe no Datadog (ID errado) | corrigir o ID |
 | Remediação "pulada" | host fora de `REMEDIATION_ALLOWED_HOSTS` | adicionar o host (com cuidado: é uma chamada de saída) |
 | Reconciliação "Falhou: Datadog rate limit reached (429)" | cota da API esgotada | tentar de novo mais tarde; olhe o limite visto na tela; reduza a frequência |
