@@ -6,7 +6,7 @@ import type { Db } from "./db-types";
 import { ConflictError, NotFoundError } from "./errors";
 import { ingestEvent } from "./ingest";
 import { createJourney, createJourneySchema, deleteJourney, setJourneyApplications, updateJourney } from "./journeys";
-import { getAlertDetail, getApplicationDetail, getJourneyDetail, getJourneyMap, listApplicationNames } from "./queries";
+import { getAlertDetail, getApplicationDetail, getApplicationMap, getJourneyDetail, getJourneyMap, listApplicationNames } from "./queries";
 
 let db: Db;
 let close: () => Promise<void>;
@@ -131,3 +131,36 @@ describe("consultas com jornadas", () => {
     expect(detail?.journeys.length).toBeGreaterThan(0);
   });
 });
+
+describe("peso = prioridade na cor e no índice", () => {
+  const prioritized = (app: string, id: string, kind: "triggered" | "recovered", priority: number | null) => ({
+    ...event(app, id, kind),
+    priority,
+  });
+
+  it("alert de P5 deixa a aplicação e a jornada âmbar; P2 em alert deixa vermelho", async () => {
+    await ingestEvent(db, prioritized("peso-a", "1", "recovered", 1));
+    await ingestEvent(db, prioritized("peso-a", "2", "triggered", 5));
+    await ingestEvent(db, prioritized("peso-b", "1", "recovered", 3));
+    await createJourney(db, make({ name: "Peso baixo", applications: ["peso-a", "peso-b"] }), "ana");
+    let map = await getJourneyMap(db);
+    let journey = map.journeys.find((j) => j.name === "Peso baixo")!;
+    expect(journey).toMatchObject({ status: "warn", downgraded: 1, counts: { alert: 1, ok: 2 } });
+    expect(journey.health).toBe(95); // perda 1 de peso 21 (16 + 1 + 4)
+    expect(map.journeys.find((j) => j.name === "Peso baixo")!.applications.find((a) => a.name === "peso-a")).toMatchObject({ status: "warn", health: 94 });
+
+    await ingestEvent(db, prioritized("peso-b", "2", "triggered", 2));
+    map = await getJourneyMap(db);
+    journey = map.journeys.find((j) => j.name === "Peso baixo")!;
+    expect(journey.status).toBe("alert");
+    expect(journey.health).toBeLessThan(75);
+  });
+
+  it("mudar a prioridade de um alerta muda a cor na próxima leitura", async () => {
+    await ingestEvent(db, prioritized("peso-c", "1", "triggered", 1));
+    expect((await getApplicationMap(db)).applications.find((a) => a.name === "peso-c")?.status).toBe("alert");
+    await ingestEvent(db, { ...prioritized("peso-c", "1", "triggered", 5), externalEventId: "peso-c-1-p5", occurredAt: new Date(Date.now() + 1000) });
+    expect((await getApplicationMap(db)).applications.find((a) => a.name === "peso-c")).toMatchObject({ status: "warn", downgraded: 1 });
+  });
+});
+

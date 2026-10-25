@@ -66,7 +66,7 @@ export function JourneyMap({ journeys, unassigned }: Props) {
           onMouseLeave={() => setFocused(null)}
           onFocus={() => setFocused(app.name)}
           onBlur={() => setFocused(null)}
-          title={`${app.name}: ${label(app.status)} · ${app.total} alertas${others > 1 ? ` · em ${others} jornadas: ${membership.get(app.name)?.join(", ")}` : ""}`}
+          title={`${app.name}: ${label(app.status)} · ${app.total} alertas${app.health !== null ? ` · saúde ${app.health}%` : ""}${others > 1 ? ` · em ${others} jornadas: ${membership.get(app.name)?.join(", ")}` : ""}`}
           className={cn(
             "flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-shadow",
             toneOf(app.status),
@@ -109,8 +109,9 @@ export function JourneyMap({ journeys, unassigned }: Props) {
                     </h3>
                     <p className="text-xs text-muted">
                       {j.applications.length} aplicações · {j.total} alertas
-                      {j.counts.alert > 0 && ` · ${j.counts.alert} em alerta`}
+                      {j.counts.alert > 0 && ` · ${j.counts.alert} em alerta${j.downgraded > 0 ? ` (${j.downgraded} de baixa prioridade)` : ""}`}
                       {j.counts.warn > 0 && ` · ${j.counts.warn} aviso`}
+                      {j.health !== null && ` · saúde ${j.health}%`}
                     </p>
                   </div>
                   {j.status ? <StateBadge state={j.status} /> : <span className="text-xs text-muted">Sem alertas</span>}

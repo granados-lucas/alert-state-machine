@@ -11,7 +11,7 @@ Este guia é para quem opera o Global Alerts. Ele explica o que é cada coisa, c
 | **Monitor** | O monitor do Datadog. Identificado pelo **ID numérico** (está na URL: `.../monitors/<ID>`). |
 | **Alerta** | O monitor dentro do Global Alerts: uma máquina de estados (`ok`, `warn`, `alert`, `no_data`) com histórico. A chave é **provedor + ID do monitor**: o mesmo monitor nunca vira dois alertas. |
 | **Aplicação** | O sistema a que o alerta pertence. Vem da tag **`service:`** do monitor. |
-| **Jornada** | Um fluxo de negócio (ex.: "Compra") formado por aplicações. A saúde da jornada é o pior estado dos alertas das aplicações dela. |
+| **Jornada** | Um fluxo de negócio (ex.: "Compra") formado por aplicações. A saúde da jornada é o pior estado dos alertas das aplicações dela, ponderado pela prioridade (ver "Prioridade e saúde"). |
 | **Remediação** | Uma chamada (webhook ou API) que a aplicação faz quando o alerta entra em certos estados. |
 
 ```text
@@ -182,7 +182,16 @@ Resposta esperada: `200 {"status":"applied","alertId":…,"state":"alert"}`. Rep
 - A **aplicação** é criada automaticamente a partir da tag `service:`.
 - Para agrupar aplicações em um fluxo de negócio, use **Nova jornada** (`/journeys/new`): nome, descrição e as aplicações (marque as existentes ou digite novas separadas por vírgula). Uma aplicação pode estar em **várias** jornadas.
 - Pela API: `POST /api/journeys` com `{"name":"Compra","description":"...","applications":["checkout","payments"]}`; troque as aplicações com `PUT /api/journeys/{id}/applications`.
-- O mapa (`/`) mostra cada jornada com a cor do pior estado entre os alertas das aplicações dela. Aplicações fora de qualquer jornada aparecem no grupo "Sem jornada".
+- O mapa (`/`) mostra cada jornada com a cor do pior estado entre os alertas das aplicações dela (com o rebaixamento por prioridade) e o índice de saúde. Aplicações fora de qualquer jornada aparecem no grupo "Sem jornada".
+
+### Prioridade e saúde (o peso do alerta)
+
+A **prioridade** do alerta (P1 a P5; no Datadog, 1 é a mais alta) é o seu **peso**: P1=16, P2=8, P3=4, P4=2, P5=1; alerta sem prioridade conta como P3. Ela define dois resultados em cada aplicação e jornada:
+
+- **Cor:** o pior estado dos alertas, com **rebaixamento**: um alerta em Alerta só deixa o item **vermelho** se for P1, P2, P3 ou sem prioridade; P4 e P5 em Alerta deixam **âmbar**. A tela mostra quantos foram rebaixados.
+- **Índice de saúde (0 a 100%)**: média ponderada pelo peso (ok 0, sem dados 25%, aviso 50%, alerta 100% de desconto). Um P1 em Alerta derruba o índice muito mais que um P5.
+
+Onde a prioridade vem: do campo **Prioridade** no cadastro, do `priority` do webhook (`$ALERT_PRIORITY`) ou do `PATCH /api/alerts/{id}`; mudar a prioridade muda a cor na próxima leitura. Defina a prioridade nos monitores do Datadog para o mapa refletir a importância de cada um.
 
 ## 6. Remediação: acionar outra ferramenta quando o alerta mudar de estado
 

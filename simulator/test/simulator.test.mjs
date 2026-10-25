@@ -74,8 +74,8 @@ test("payload imita as variáveis do webhook do Datadog", () => {
 
 test("saúde da jornada é o pior estado entre as aplicações", () => {
   const monitors = [
-    { monitorId: "1", application: "a", remediation: null },
-    { monitorId: "2", application: "b", remediation: null },
+    { monitorId: "1", application: "a", remediation: null, priority: 2 },
+    { monitorId: "2", application: "b", remediation: null, priority: 2 },
   ];
   const model = createModel(monitors);
   model.apply("1", "ok", 1);
@@ -196,4 +196,20 @@ test("Datadog simulado: listagem paginada com filtro de tags, desvios e limite d
   fake.exhaustRateLimit();
   assert.equal((await get("")).status, 429);
   await receiver.close();
+});
+
+test("peso = prioridade: alert de P4/P5 só deixa âmbar e o índice é ponderado", () => {
+  const monitors = [
+    { monitorId: "1", application: "a", remediation: null, priority: 1 },
+    { monitorId: "2", application: "a", remediation: null, priority: 5 },
+    { monitorId: "3", application: "b", remediation: null, priority: null },
+  ];
+  const model = createModel(monitors);
+  model.apply("1", "ok", 1);
+  model.apply("2", "alert", 1);
+  model.apply("3", "alert", 1);
+  assert.deepEqual(model.health(["a"]), { status: "warn", health: 94 });
+  assert.deepEqual(model.health(["b"]), { status: "alert", health: 0 });
+  assert.equal(model.journeyStatus(["a", "b"]), "alert");
+  assert.deepEqual(model.health(["x"]), { status: null, health: null });
 });

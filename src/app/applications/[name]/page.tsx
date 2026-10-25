@@ -23,6 +23,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ na
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{application.name}</h1>
         {application.status && <StateBadge state={application.status} />}
+        {application.health !== null && <span className="text-sm font-normal text-muted" title="Índice de saúde ponderado pela prioridade dos alertas (P1 pesa mais que P5)">saúde {application.health}%</span>}
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

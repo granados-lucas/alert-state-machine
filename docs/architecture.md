@@ -11,7 +11,7 @@ src/
 ├── domain/
 │   ├── alert-machine/        # estados, eventos, transition(), listEdges(): puro, sem I/O
 │   ├── mute.ts               # regras do silêncio (prazo máximo, vigência)
-│   └── application-status.ts # pior estado (aplicação e jornada), soma de contagens
+│   └── application-status.ts # saúde: cor (pior estado com rebaixamento por prioridade) e índice ponderado pelo peso = prioridade
 ├── providers/                # PORTA para ferramentas de monitoramento
 │   ├── types.ts              # AlertProvider, NormalizedEvent
 │   ├── index.ts              # registro (id → adaptador)
@@ -112,7 +112,7 @@ Aplicação separada (próprio `package.json` e Dockerfile, sem dependências, s
 | Equivalência de estados do Datadog em um módulo só (`providers/datadog/states.ts`) | Webhook, silêncio e reconciliação precisam concordar; a tela e os testes leem a mesma tabela | Se `Unknown` precisar ser distinto de `No Data`: novo estado `unknown` |
 | Alerta nasce em `no_data` | "Sem informação" até o primeiro evento; evita inventar `ok` | Se o provedor informar o estado inicial por API |
 | Aplicação = tag `service:` (fallback `app:`/`application:`, senão `unassigned`) | Convenção de *unified service tagging* do Datadog | Se a empresa usar outra tag |
-| Status da aplicação e da jornada = pior estado (`alert > warn > no_data > ok`) | Pedido: 1 alerta em alert deixa a aplicação e a jornada vermelhas; jornada = pior das aplicações = pior de todos os alertas dela | Limiar percentual ou peso por prioridade, se jornadas grandes ficarem sempre vermelhas |
+| Peso do alerta = prioridade (P1=16, P2=8, P3=4, P4=2, P5=1; sem prioridade = P3). Cor da aplicação/jornada = pior estado com rebaixamento (`alert` de P4/P5 vira âmbar) e índice de saúde ponderado | Pedido do solicitante; evita jornadas grandes sempre vermelhas por causa de alertas de baixa prioridade sem esconder alertas importantes | Mudar a escala ou o limite (`MAX_RED_PRIORITY`) em `application-status.ts`; limiar percentual se ainda ficar ruidoso |
 | Jornada ligada à **aplicação**, não ao alerta | Pedido: "uma aplicação pode fazer parte de mais de uma jornada" | Se um alerta precisar pertencer só a uma jornada: tabela `journey_alerts` |
 | Mapa de jornadas em cartões, não em grafo | Sem arestas, o grafo vira só nós soltos; cartões agrupam melhor 30+ aplicações e são legíveis e acessíveis | Voltar ao React Flow se surgirem relações a desenhar |
 | `dependencies_updated` continua no enum `audit_kind` | PostgreSQL não remove valores de enum; fica marcado como legado | — |

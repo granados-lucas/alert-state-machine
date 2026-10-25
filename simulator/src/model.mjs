@@ -1,6 +1,9 @@
 // Oráculo independente: reimplementa as regras esperadas da máquina de estados.
 const TRIGGERS = { hook: ["alert"], api: ["alert", "warn"], flaky: ["alert"] };
 const SEVERITY = { ok: 0, no_data: 1, warn: 2, alert: 3 };
+// Peso = prioridade (exponencial; sem prioridade conta como P3) e quanto cada estado desconta do índice.
+const WEIGHTS = { 1: 16, 2: 8, 3: 4, 4: 2, 5: 1 };
+const FACTOR = { ok: 0, no_data: 0.25, warn: 0.5, alert: 1 };
 
 export function createModel(monitors) {
   const byId = new Map(
@@ -26,16 +29,29 @@ export function createModel(monitors) {
     silentChange(id, state) {
       byId.get(id).truth = state;
     },
-    /** Saúde da jornada = pior estado entre as aplicações dela. */
+    /** Cor e índice de saúde (peso = prioridade) de um conjunto de aplicações: reimplementação independente. */
+    health(applicationNames) {
+      const set = new Set(applicationNames);
+      let status = null;
+      let weight = 0;
+      let loss = 0;
+      let total = 0;
+      for (const m of byId.values()) {
+        if (!set.has(m.monitor.application)) continue;
+        const p = m.monitor.priority ?? 3;
+        const effective = m.state === "alert" && p > 3 ? "warn" : m.state;
+        if (status === null || SEVERITY[effective] > SEVERITY[status]) status = effective;
+        weight += WEIGHTS[p];
+        loss += WEIGHTS[p] * FACTOR[m.state];
+        total += 1;
+      }
+      return { status, health: total === 0 ? null : Math.round(100 * (1 - loss / weight)) };
+    },
     journeyStatus(applicationNames) {
-      return applicationNames.reduce((worst, name) => {
-        const s = this.applicationStatus(name);
-        return s !== null && (worst === null || SEVERITY[s] > SEVERITY[worst]) ? s : worst;
-      }, null);
+      return this.health(applicationNames).status;
     },
     applicationStatus(name) {
-      const states = [...byId.values()].filter((m) => m.monitor.application === name).map((m) => m.state);
-      return states.reduce((worst, s) => (worst === null || SEVERITY[s] > SEVERITY[worst] ? s : worst), null);
+      return this.health([name]).status;
     },
   };
 }

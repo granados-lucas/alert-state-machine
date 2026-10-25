@@ -28,8 +28,10 @@ export default async function JourneyPage({ params }: { params: Promise<{ id: st
           <h1 className="flex flex-wrap items-center gap-3 text-2xl font-semibold tracking-tight">
             {journey.name}
             {journey.status ? <StateBadge state={journey.status} /> : <span className="text-sm font-normal text-muted">Sem alertas</span>}
+            {journey.health !== null && <span className="text-sm font-normal text-muted" title="Índice de saúde ponderado pela prioridade dos alertas (P1 pesa mais que P5)">saúde {journey.health}%</span>}
           </h1>
           {journey.description && <p className="mt-1 max-w-2xl text-muted">{journey.description}</p>}
+          {journey.downgraded > 0 && <p className="mt-1 text-xs text-muted">{journey.downgraded} alerta(s) em Alerta de baixa prioridade (P4/P5) deixam a cor em âmbar, não vermelha.</p>}
         </div>
         <div className="flex items-center gap-4">
           <AutoRefresh seconds={5} />
@@ -67,7 +69,7 @@ export default async function JourneyPage({ params }: { params: Promise<{ id: st
                     {a.status ? STATE_META[a.status].label : "Sem alertas"}
                   </span>
                   <span className="text-xs text-muted">
-                    {a.total} alertas{a.counts.alert > 0 && ` · ${a.counts.alert} em alerta`}{a.counts.warn > 0 && ` · ${a.counts.warn} aviso`}
+                    {a.total} alertas{a.counts.alert > 0 && ` · ${a.counts.alert} em alerta`}{a.counts.warn > 0 && ` · ${a.counts.warn} aviso`}{a.health !== null && ` · saúde ${a.health}%`}
                   </span>
                 </Link>
               </li>
@@ -89,6 +91,7 @@ export default async function JourneyPage({ params }: { params: Promise<{ id: st
                   <th scope="col" className={tableHead}>Estado</th>
                   <th scope="col" className={tableHead}>Alerta</th>
                   <th scope="col" className={tableHead}>Aplicação</th>
+                  <th scope="col" className={tableHead}>Prioridade</th>
                   <th scope="col" className={tableHead}>Desde</th>
                 </tr>
               </thead>
@@ -98,6 +101,7 @@ export default async function JourneyPage({ params }: { params: Promise<{ id: st
                     <td className={tableCell}><StateBadge state={a.state} /></td>
                     <td className={tableCell}><Link className="font-medium text-fg hover:text-accent-soft" href={`/alerts/${a.id}`}>{a.name}</Link> <MutedBadge mutedUntil={a.mutedUntil} /></td>
                     <td className={tableCell}><Link className={linkClass} href={`/applications/${encodeURIComponent(a.application)}`}>{a.application}</Link></td>
+                    <td className={`${tableCell} text-muted`}>{a.priority ? `P${a.priority}` : "—"}</td>
                     <td className={`${tableCell} font-mono text-xs text-muted`}>{formatTime(a.stateChangedAt)}</td>
                   </tr>
                 ))}

@@ -1,10 +1,20 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, lt, sql } from "drizzle-orm";
 import { alerts, applications, auditLog, journeyApplications, journeys, remediationRuns, remediations } from "@/db/schema";
 import type { AlertState } from "@/domain/alert-machine";
-import { bySeverityDesc, emptyCounts, sumCounts, worstState, type StateCounts } from "@/domain/application-status";
+import { bySeverityDesc, byHealthAsc, mergeBuckets, summarize, type Bucket, type StateCounts } from "@/domain/application-status";
 import type { Db } from "./db-types";
 
-export type MapApplication = { name: string; counts: StateCounts; total: number; status: AlertState | null };
+// `status` é a cor (pior estado com rebaixamento por prioridade) e `health` o índice ponderado pela
+// prioridade (0 a 100): ver domain/application-status.ts. `buckets` permite somar aplicações em jornadas.
+export type MapApplication = {
+  name: string;
+  counts: StateCounts;
+  total: number;
+  status: AlertState | null;
+  health: number | null;
+  downgraded: number;
+  buckets: Bucket[];
+};
 export type MapJourney = {
   id: number;
   name: string;
@@ -13,34 +23,34 @@ export type MapJourney = {
   counts: StateCounts;
   total: number;
   status: AlertState | null;
+  health: number | null;
+  downgraded: number;
 };
 
-/** Aplicações com contagens por estado e o pior estado entre seus alertas ativos. */
+const worstFirst = (a: { status: AlertState | null; health: number | null; name: string }, b: typeof a) =>
+  bySeverityDesc(a.status, b.status) || byHealthAsc(a.health, b.health) || a.name.localeCompare(b.name);
+
+/** Aplicações com contagens por estado, cor (pior estado rebaixado pela prioridade) e índice de saúde. */
 export async function getApplicationMap(db: Db) {
   const rows = await db
-    .select({ name: applications.name, state: alerts.state, n: count(alerts.id) })
+    .select({ name: applications.name, state: alerts.state, priority: alerts.priority, n: count(alerts.id) })
     .from(applications)
     .leftJoin(alerts, and(eq(alerts.applicationId, applications.id), isNull(alerts.archivedAt)))
-    .groupBy(applications.name, alerts.state);
-  const byName = new Map<string, MapApplication>();
+    .groupBy(applications.name, alerts.state, alerts.priority);
+  const byName = new Map<string, Bucket[]>();
   for (const row of rows) {
-    const app = byName.get(row.name) ?? { name: row.name, counts: emptyCounts(), total: 0, status: null };
-    if (row.state) {
-      app.counts[row.state] += row.n;
-      app.total += row.n;
-    }
-    byName.set(row.name, app);
+    const list = byName.get(row.name) ?? [];
+    if (row.state) list.push({ state: row.state, priority: row.priority, n: row.n });
+    byName.set(row.name, list);
   }
-  const list = [...byName.values()]
-    .map((app) => ({ ...app, status: worstState(app.counts) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  return { applications: list };
+  const list: MapApplication[] = [...byName].map(([name, buckets]) => ({ name, buckets, ...summarize(buckets) }));
+  return { applications: list.sort(worstFirst) };
 }
 
 /**
- * Mapa de jornadas: cada jornada tem as aplicações dela; a saúde da jornada é o pior estado entre os
- * alertas dessas aplicações. Uma aplicação pode aparecer em várias jornadas. `unassigned` reúne as
- * aplicações que ainda não estão em nenhuma jornada (nada some do mapa).
+ * Mapa de jornadas: cada jornada tem as aplicações dela; a saúde da jornada considera todos os alertas
+ * dessas aplicações (cor = pior estado rebaixado pela prioridade; índice ponderado). Uma aplicação pode
+ * aparecer em várias jornadas. `unassigned` reúne as aplicações que ainda não estão em nenhuma jornada.
  */
 export async function getJourneyMap(db: Db) {
   const { applications: apps } = await getApplicationMap(db);
@@ -57,12 +67,12 @@ export async function getJourneyMap(db: Db) {
       .filter((l) => l.journeyId === j.id)
       .map((l) => byName.get(l.application))
       .filter((a): a is MapApplication => a !== undefined)
-      .sort((a, b) => bySeverityDesc(a.status, b.status) || a.name.localeCompare(b.name));
-    const counts = sumCounts(members.map((m) => m.counts));
-    return { id: j.id, name: j.name, description: j.description, applications: members, counts, total: members.reduce((s, m) => s + m.total, 0), status: worstState(counts) };
+      .sort(worstFirst);
+    const summary = summarize(mergeBuckets(members.map((m) => m.buckets)));
+    return { id: j.id, name: j.name, description: j.description, applications: members, ...summary };
   });
-  journeyList.sort((a, b) => bySeverityDesc(a.status, b.status) || a.name.localeCompare(b.name));
-  const unassigned = apps.filter((a) => !inJourney.has(a.name)).sort((a, b) => bySeverityDesc(a.status, b.status) || a.name.localeCompare(b.name));
+  journeyList.sort(worstFirst);
+  const unassigned = apps.filter((a) => !inJourney.has(a.name));
   return { journeys: journeyList, unassigned, totalApplications: apps.length };
 }
 

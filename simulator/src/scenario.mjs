@@ -156,6 +156,9 @@ export async function verify({ client, catalog, model, receiver, log, appLevel, 
       const got = json.applications.find((a) => a.name === app)?.status ?? null;
       const want = model.applicationStatus(app);
       if (got !== want) problems.push(`application ${app}: status ${got}, want ${want}`);
+      const gotHealth = json.applications.find((a) => a.name === app)?.health ?? null;
+      const wantHealth = model.health([app]).health;
+      if (gotHealth !== wantHealth) problems.push(`application ${app}: health ${gotHealth}, want ${wantHealth}`);
     }
     const { json: map } = await client.journeys();
     for (const journey of catalog.journeys) {
@@ -166,6 +169,8 @@ export async function verify({ client, catalog, model, receiver, log, appLevel, 
       }
       const want = model.journeyStatus(journey.applications);
       if (got.status !== want) problems.push(`journey ${journey.name}: status ${got.status}, want ${want}`);
+      const wantHealth = model.health(journey.applications).health;
+      if (got.health !== wantHealth) problems.push(`journey ${journey.name}: health ${got.health}, want ${wantHealth}`);
       const members = got.applications.map((a) => a.name).sort().join();
       if (members !== [...journey.applications].sort().join()) problems.push(`journey ${journey.name}: applications differ`);
     }

@@ -5,6 +5,7 @@ import { StateBadge } from "@/components/state-badge";
 import { MutedBadge } from "@/components/muted-badge";
 import { STATE_META } from "@/components/alert-graph/meta";
 import { Card, linkClass, SectionTitle, tableCell, tableHead } from "@/components/ui/ui";
+import { effectiveState, weightOf } from "@/domain/application-status";
 import { isMuted } from "@/domain/mute";
 import { getDatadogApiConfig } from "@/lib/env";
 import { resolveOverallState } from "@/providers/datadog/states";
@@ -87,7 +88,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
               </>
             )}
             <dt className="text-muted">Prioridade</dt>
-            <dd>{alert.priority ? `P${alert.priority}` : "—"}</dd>
+            <dd>{alert.priority ? `P${alert.priority}` : "sem prioridade (conta como P3)"} · peso {weightOf(alert.priority)} na saúde{alert.state === "alert" && effectiveState(alert.state, alert.priority) !== alert.state ? " · em Alerta, mas de baixa prioridade: não deixa a aplicação vermelha" : ""}</dd>
             <dt className="text-muted">Estado desde</dt>
             <dd className="font-mono text-xs leading-6">{formatTime(alert.stateChangedAt)} (último evento: {formatTime(alert.lastEventAt)})</dd>
             <dt className="text-muted">Tags</dt>
