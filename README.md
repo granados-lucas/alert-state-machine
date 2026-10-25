@@ -1,6 +1,6 @@
 # Global Alerts
 
-Sistema interno que abstrai os Monitors do Datadog: cada alerta é uma máquina de estados alimentada por webhooks, independente do provedor, com mapa de jornadas (saúde por fluxo de negócio), histórico de auditoria e remediação automática. Escopo completo em [PRODUCT.md](PRODUCT.md).
+Sistema interno que abstrai as ferramentas de monitoramento (Datadog, Amazon CloudWatch, AppDynamics ou qualquer outra, por **um webhook único**): cada alerta é uma máquina de estados alimentada por webhooks, independente da ferramenta, com mapa de jornadas (saúde por fluxo de negócio, ponderada pela prioridade dos alertas), histórico de auditoria e remediação automática. Escopo completo em [PRODUCT.md](PRODUCT.md).
 
 ## Subir tudo com Docker
 
@@ -14,7 +14,7 @@ Para validar com 32 aplicações e 200 alertas simulando o Datadog (aplicação 
 docker compose --profile simulator up --build --abort-on-container-exit --exit-code-from simulator simulator
 ```
 
-O simulador registra os alertas, envia webhooks no formato do Datadog (inclusive duplicados, fora de ordem, com segredo errado e malformados) e compara o resultado da aplicação com um oráculo próprio. Termina com código 0 se tudo bater. Abra http://localhost:3000 para ver o mapa. Para zerar os dados: `docker compose down -v`.
+O simulador registra os alertas, envia webhooks no formato do Datadog (inclusive duplicados, fora de ordem, com segredo errado e malformados), exercita o silêncio, a reconciliação e as outras fontes (CloudWatch, AppDynamics, genérica) pelo mesmo webhook e compara o resultado da aplicação com um oráculo próprio. Termina com código 0 se tudo bater. Abra http://localhost:3000 para ver o mapa. Para zerar os dados: `docker compose down -v`.
 
 Para **acompanhar a interface com dados mudando sozinhos** (modo demonstração: poucos alertas degradam por vez e se recuperam sozinhos, ~0,6 mudança por segundo):
 
@@ -42,21 +42,23 @@ pnpm check        # lint, tipos, regras, testes com cobertura, testes do simulad
 
 | O quê | Onde |
 |---|---|
-| Mapa de jornadas: jornada e aplicações coloridas pelo pior estado dos alertas | `/` |
+| Mapa de jornadas: jornada e aplicações coloridas pelo pior estado dos alertas (com rebaixamento por prioridade) e índice de saúde de 0 a 100% | `/` |
 | Jornadas (detalhe, criar, editar) | `/journeys/[id]`, `/journeys/new`, `/journeys/[id]/edit` |
 | Alertas, filtros e detalhe com remediações, execuções e auditoria | `/alerts`, `/alerts/[id]` |
 | Criar alerta com remediação opcional | `/alerts/new` |
-| Máquina de estados | `/graph` |
-| Silenciar/reativar o monitor no Datadog | botão na página do alerta; `POST /api/alerts/[id]/mute` e `/unmute` ([detalhes](docs/integrations/datadog.md#silenciar-monitores-pela-api-ação-da-aplicação-no-datadog)) |
+| Máquina de estados e equivalência de estados de cada fonte | `/graph` |
+| Saúde da própria aplicação | `/status`; `GET /api/metrics` (Prometheus), `GET /api/health`, `GET /api/health/live` ([detalhes](docs/observability.md)) |
+| Silenciar/reativar o monitor no Datadog (atômico: operações interrompidas são concluídas sozinhas) | botão na página do alerta; `POST /api/alerts/[id]/mute` e `/unmute`; `GET /api/mute-operations` e `POST /api/mute-operations/recover` ([detalhes](docs/integrations/datadog.md#silenciar-monitores-pela-api-ação-da-aplicação-no-datadog)) |
 | Reconciliação com o Datadog (tela, API e script) | `/reconciliation`; `POST /api/reconciliation`; `scripts/reconcile.mjs` ([detalhes](docs/integrations/datadog.md#reconciliação-listar-monitores-e-respeitar-o-limite-de-uso)) |
 | Webhook (único, qualquer ferramenta) | `POST /api/webhooks` com `"source"` no corpo ([Datadog](docs/integrations/datadog.md), [CloudWatch](docs/integrations/cloudwatch.md), [AppDynamics](docs/integrations/appdynamics.md), [genérico](docs/integrations/generic.md)) |
 | API de gestão (sem token: a autenticação é do SSO na frente; identidade em `AUTH_USER_HEADER`) | `/api/alerts`, `/api/alerts/[id]`, `/api/alerts/[id]/remediations`, `/api/applications`, `/api/journeys`, `/api/journeys/[id]`, `/api/journeys/[id]/applications` |
 
 ## Documentação
 
-- [Guia de uso: criar alertas e ligá-los ao Datadog](docs/guia-de-uso.md)
+- [Guia de uso: criar alertas e ligá-los às suas ferramentas](docs/guia-de-uso.md)
 - [Produto e escopo](PRODUCT.md)
-- [Integração com o Datadog](docs/integrations/datadog.md)
+- Integrações: [Datadog](docs/integrations/datadog.md), [CloudWatch](docs/integrations/cloudwatch.md), [AppDynamics](docs/integrations/appdynamics.md), [genérica](docs/integrations/generic.md)
+- [Observabilidade da aplicação](docs/observability.md)
 - [Preparação local](docs/onboarding.md)
 - [Estrutura e decisões técnicas](docs/architecture.md)
 - [Design e acessibilidade](docs/design.md)

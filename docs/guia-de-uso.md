@@ -1,6 +1,6 @@
-# Guia de uso: criar alertas e ligá-los ao Datadog
+# Guia de uso: criar alertas e ligá-los às suas ferramentas de monitoramento
 
-Este guia é para quem opera o Global Alerts. Ele explica o que é cada coisa, como colocar a aplicação no ar, **como criar alertas** e **como ligar cada alerta a um monitor do Datadog** (webhook para receber estados; API para silenciar e reconciliar).
+Este guia é para quem opera o Global Alerts. Ele explica o que é cada coisa, como colocar a aplicação no ar, **como criar alertas** e **como ligar cada alerta a uma ferramenta** (Datadog, Amazon CloudWatch, AppDynamics ou qualquer outra) por um **webhook único**; para o Datadog há também a API (silenciar e reconciliar). As seções 4.1 a 4.5 usam o Datadog como exemplo; a 4.6 mostra as outras e como trocar de ferramenta.
 
 > **Estado da validação:** tudo aqui foi testado contra o Datadog **simulado**. A integração com o Datadog real ainda não foi executada; os pontos que dependem disso estão marcados com ⚠. Valide com um monitor de teste antes de usar em produção.
 
@@ -8,16 +8,16 @@ Este guia é para quem opera o Global Alerts. Ele explica o que é cada coisa, c
 
 | Conceito | O que é |
 |---|---|
-| **Monitor** | O monitor do Datadog. Identificado pelo **ID numérico** (está na URL: `.../monitors/<ID>`). |
-| **Alerta** | O monitor dentro do Global Alerts: uma máquina de estados (`ok`, `warn`, `alert`, `no_data`) com histórico. A chave é **provedor + ID do monitor**: o mesmo monitor nunca vira dois alertas. |
+| **Monitor** | O monitor ou alarme da ferramenta de origem. No Datadog, identificado pelo **ID numérico** (URL `.../monitors/<ID>`); no CloudWatch, pelo ARN do alarme; no AppDynamics, por `aplicação/regra de saúde`. |
+| **Alerta** | O monitor dentro do Global Alerts: uma máquina de estados (`ok`, `warn`, `alert`, `no_data`) com histórico. A chave é **fonte + ID do monitor**: o mesmo monitor nunca vira dois alertas, e o mesmo ID em fontes diferentes são alertas diferentes. |
 | **Aplicação** | O sistema a que o alerta pertence. Vem da tag **`service:`** do monitor. |
 | **Jornada** | Um fluxo de negócio (ex.: "Compra") formado por aplicações. A saúde da jornada é o pior estado dos alertas das aplicações dela, ponderado pela prioridade (ver "Prioridade e saúde"). |
 | **Remediação** | Uma chamada (webhook ou API) que a aplicação faz quando o alerta entra em certos estados. |
 
 ```text
-Monitor no Datadog ──(webhook: muda de estado)──▶ Global Alerts ──▶ alerta, aplicação, jornada, histórico
-        ▲                                              │
-        └──(API: silenciar, listar para reconciliar)───┘
+Monitor (Datadog, CloudWatch, AppDynamics…) ──(webhook único: muda de estado)──▶ Global Alerts ──▶ alerta, aplicação, jornada, histórico
+        ▲                                                                              │
+        └──(só Datadog, pela API: silenciar, listar para reconciliar)───────────────────┘
 ```
 
 Todo alerta **nasce em "Sem dados"** (`no_data`) e só muda quando chega o primeiro evento do Datadog (ou uma reconciliação). Um alerta que você cria e que ainda não recebeu nenhum webhook, portanto, aparece em "Sem dados": isso é esperado.
@@ -59,7 +59,8 @@ Use quando quiser registrar o monitor **antes** do primeiro webhook ou configura
 
 | Campo | O que preencher |
 |---|---|
-| **ID do monitor no provedor (Datadog)** | O ID numérico do monitor, da URL `.../monitors/<ID>`. **Tem que ser o ID real**: é por ele que os webhooks encontram o alerta. |
+| **Fonte do alerta** | A ferramenta de origem (Datadog, Amazon CloudWatch, AppDynamics ou Genérico). |
+| **ID do monitor na fonte** | O ID do monitor na fonte escolhida (Datadog: o número da URL `.../monitors/<ID>`; CloudWatch: o ARN do alarme; AppDynamics: `aplicação/regra`). **Tem que ser o ID real**: é por ele que os webhooks encontram o alerta; a tela mostra a dica da fonte escolhida. |
 | **Nome** | Qualquer nome. O Datadog o atualiza quando enviar eventos. |
 | **Aplicação** | O mesmo valor da tag `service:` do monitor (ex.: `checkout`). |
 | **Prioridade** (opcional) | P1 a P5. |
@@ -87,7 +88,7 @@ curl -X POST http://localhost:3000/api/alerts \
   }'
 ```
 
-`provider` assume `datadog`. Respostas: `201` criado, `400` entrada inválida (a resposta lista os campos), `409` já existe.
+`provider` assume `datadog`; use `cloudwatch`, `appdynamics` ou `generic` para as outras fontes (qualquer outro valor responde `400`). Respostas: `201` criado, `400` entrada inválida (a resposta lista os campos), `409` já existe.
 
 Outras operações (todas auditadas): `GET /api/alerts` (filtros `state`, `application`, `search`, `limit`, `before`), `GET /api/alerts/{id}`, `PATCH /api/alerts/{id}` (nome, prioridade, tags, link, `archived`), `DELETE /api/alerts/{id}` (arquiva; o histórico permanece) e `POST /api/alerts/{id}/remediations`.
 
@@ -249,8 +250,9 @@ Pré-requisito: `DD_API_KEY`, `DD_APP_KEY` (e `DD_SITE`) configurados e `DD_API_
 | **Mapa de jornadas** (`/`) | cor de cada jornada e aplicação; "Mudanças recentes" ao lado |
 | **Alertas** (`/alerts`) | lista com filtros por estado, aplicação e nome |
 | **Detalhe do alerta** | estado, **estado bruto lido no Datadog** (e aviso se divergir), jornadas, remediações e execuções, silêncio e a **auditoria completa** (quem, quando, antes/depois) |
-| **Máquina de estados** (`/graph`) | transições e a **tabela de equivalência** com os estados do Datadog |
+| **Máquina de estados** (`/graph`) | transições e, para **cada fonte**, a tabela de equivalência com os estados dela |
 | **Reconciliação** (`/reconciliation`) | histórico de execuções, resumo e limites de uso vistos |
+| **Status** (`/status`) | saúde da própria aplicação: banco, último evento por fonte, silêncios pendentes, última reconciliação, remediações |
 
 A tela **Status** (`/status`) mostra a saúde da própria aplicação: banco, quando cada fonte entregou o último evento, silêncios pendentes, última reconciliação e falhas de remediação. Para monitorá-la com o Prometheus, veja `docs/observability.md`.
 
