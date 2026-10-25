@@ -15,6 +15,16 @@ test("catálogo padrão tem 32 aplicações e exatamente 200 monitores únicos",
   for (const app of c.applications) assert.ok(c.monitors.filter((m) => m.application === app).length >= 2);
 });
 
+test("cenário da demo: 50 aplicações, 300 alertas e jornadas que cobrem quase tudo", () => {
+  const c = generateCatalog({ apps: 50, alerts: 300 });
+  assert.equal(c.applications.length, 50);
+  assert.equal(c.monitors.length, 300);
+  assert.ok(c.journeys.length >= 7);
+  const covered = new Set(c.journeys.flatMap((j) => j.applications));
+  assert.ok(covered.size >= 45, `só ${covered.size} aplicações com jornada`);
+  assert.ok(c.applications.some((a) => !covered.has(a)), "alguma aplicação deveria ficar sem jornada");
+});
+
 test("catálogo é determinístico por semente", () => {
   assert.deepEqual(generateCatalog({ seed: 7 }), generateCatalog({ seed: 7 }));
   assert.notDeepEqual(generateCatalog({ seed: 7 }).monitors, generateCatalog({ seed: 8 }).monitors);

@@ -84,6 +84,22 @@ if (command === "stream") {
       await new Promise((r) => setTimeout(r, 5000));
     }
     rounds += 1;
+    // Se a aplicação principal teve os dados zerados (down -v) com o demo rodando, repõe alertas, estados e jornadas.
+    try {
+      if (rounds % 10 === 0 && ((await client.journeys()).json?.journeys ?? []).length < catalog.journeys.length) {
+        log("main application lost its journeys; seeding again");
+        await seed({ client, catalog, receiverUrl: values["receiver-url"], log: () => {} });
+        for (const monitor of catalog.monitors) {
+          const { state, lastTs } = model.get(monitor.monitorId);
+          const at = Math.max(Date.now(), (lastTs ?? 0) + 1);
+          model.apply(monitor.monitorId, state, at);
+          await client.sendWebhook(buildWebhookPayload(monitor, state, { at }));
+        }
+        await createJourneys({ client, catalog, log });
+      }
+    } catch (error) {
+      log(`resync failed (${error instanceof Error ? error.message : "error"}); retrying`);
+    }
     if (rounds % 40 === 0) log(`${sent} state changes sent so far`);
     await new Promise((r) => setTimeout(r, pause));
   }

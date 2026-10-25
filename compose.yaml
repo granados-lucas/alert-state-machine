@@ -107,7 +107,7 @@ services:
     networks:
       default:
         aliases: [simulator-demo, datadog-sim]
-    command: ["node", "src/cli.mjs", "stream", "--apps", "32", "--alerts", "200", "--workers", "3", "--interval", "1500"]
+    command: ["node", "src/cli.mjs", "stream", "--apps", "50", "--alerts", "300", "--workers", "3", "--interval", "1500"]
     depends_on:
       app:
         condition: service_healthy

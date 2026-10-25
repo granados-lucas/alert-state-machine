@@ -86,7 +86,7 @@ async function sendChecked({ client, model, monitor, state, at, kind }) {
 // Pesos padrão (teste de carga) e "calmo" (demonstração): no calmo a maioria dos alertas está em OK
 // e os problemas aparecem e somem, como numa operação saudável.
 export const BUSY_WEIGHTS = [["alert", 3], ["warn", 3], ["ok", 5], ["no_data", 1]];
-export const CALM_WEIGHTS = [["ok", 100], ["warn", 3], ["alert", 1.5], ["no_data", 0.5]];
+export const CALM_WEIGHTS = [["ok", 1000], ["warn", 3], ["alert", 1.5], ["no_data", 0.5]];
 const PROBLEM_WEIGHTS = [["warn", 5], ["alert", 3], ["no_data", 1]];
 
 export async function churn({ client, catalog, model, events, seed: seedValue, log, workers = 12, stateWeights = BUSY_WEIGHTS, isMuted = () => false }) {
@@ -199,7 +199,7 @@ export async function verify({ client, catalog, model, receiver, log, appLevel, 
  * problema se recupera sozinho com probabilidade `recoverChance` por rodada (vida média ~1/recoverChance
  * rodadas). Todo evento muda o estado de verdade, então cada um é visível na interface.
  */
-export async function healthRound({ client, catalog, model, rng, degradeSlots = 3, degradeChance = 0.13, recoverChance = 0.05, isMuted = () => false }) {
+export async function healthRound({ client, catalog, model, rng, degradeSlots = 2, degradeChance = 0.04, recoverChance = 0.03, isMuted = () => false }) {
   const events = [];
   for (const monitor of catalog.monitors) {
     const state = model.get(monitor.monitorId).state;

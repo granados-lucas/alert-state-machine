@@ -6,16 +6,20 @@ const APP_NAMES = [
   "api-gateway", "web-frontend", "mobile-bff", "recommendations", "pricing", "promotions", "fraud-check", "ledger",
   "scheduler", "media-service", "cdn-origin", "audit-trail", "feature-flags", "config-service", "queue-workers", "data-sync",
   "support-portal", "partner-api",
+  "cart", "wishlist", "reviews", "loyalty", "returns", "refunds", "tax-service", "address-validation",
+  "warehouse", "carrier-integration", "customer-profile", "chat-support", "push-gateway", "ab-testing", "data-warehouse", "etl-jobs",
 ];
 const JOURNEY_DEFS = [
-  ["Compra", "Do carrinho à confirmação do pedido", ["web-frontend", "mobile-bff", "api-gateway", "auth", "catalog", "pricing", "promotions", "checkout", "payments", "fraud-check", "inventory", "orders"]],
-  ["Pagamento e cobrança", "Cobrança, antifraude e conciliação", ["payments", "fraud-check", "billing", "ledger", "notifications", "email-gateway"]],
-  ["Entrega", "Separação, envio e avisos ao cliente", ["orders", "inventory", "shipping", "notifications", "sms-gateway"]],
-  ["Cadastro e acesso", "Criar conta, entrar e recuperar acesso", ["web-frontend", "mobile-bff", "api-gateway", "auth", "users", "email-gateway", "sms-gateway", "feature-flags"]],
-  ["Busca e descoberta", "Encontrar e recomendar produtos", ["web-frontend", "api-gateway", "search", "catalog", "recommendations", "media-service", "cdn-origin"]],
-  ["Suporte ao cliente", "Atendimento e histórico do cliente", ["support-portal", "users", "orders", "notifications", "email-gateway", "audit-trail"]],
-  ["Relatórios e analytics", "Ingestão, processamento e painéis", ["ingest", "analytics", "reports", "queue-workers", "config-service"]],
-  ["Parceiros", "Integrações com parceiros", ["partner-api", "api-gateway", "auth", "orders", "ledger"]],
+  ["Compra", "Do carrinho à confirmação do pedido", ["web-frontend", "mobile-bff", "api-gateway", "auth", "catalog", "cart", "pricing", "promotions", "tax-service", "address-validation", "checkout", "payments", "fraud-check", "inventory", "orders"]],
+  ["Pagamento e cobrança", "Cobrança, antifraude e conciliação", ["payments", "fraud-check", "billing", "ledger", "tax-service", "refunds", "notifications", "email-gateway"]],
+  ["Entrega", "Separação, envio e avisos ao cliente", ["orders", "inventory", "warehouse", "shipping", "carrier-integration", "address-validation", "notifications", "sms-gateway"]],
+  ["Cadastro e acesso", "Criar conta, entrar e recuperar acesso", ["web-frontend", "mobile-bff", "api-gateway", "auth", "users", "customer-profile", "email-gateway", "sms-gateway", "feature-flags"]],
+  ["Busca e descoberta", "Encontrar e recomendar produtos", ["web-frontend", "api-gateway", "search", "catalog", "recommendations", "reviews", "ab-testing", "media-service", "cdn-origin"]],
+  ["Suporte ao cliente", "Atendimento e histórico do cliente", ["support-portal", "chat-support", "users", "customer-profile", "orders", "notifications", "email-gateway", "audit-trail"]],
+  ["Devoluções e reembolsos", "Pedir devolução, receber o produto e devolver o dinheiro", ["support-portal", "orders", "returns", "warehouse", "refunds", "payments", "ledger", "notifications"]],
+  ["Fidelidade e engajamento", "Programa de pontos, listas de desejos e campanhas", ["web-frontend", "mobile-bff", "loyalty", "wishlist", "promotions", "recommendations", "customer-profile", "push-gateway", "email-gateway"]],
+  ["Relatórios e analytics", "Ingestão, processamento e painéis", ["ingest", "analytics", "reports", "queue-workers", "etl-jobs", "data-warehouse", "data-sync", "config-service"]],
+  ["Parceiros", "Integrações com parceiros", ["partner-api", "api-gateway", "auth", "orders", "carrier-integration", "ledger"]],
 ];
 const CHECKS = [
   "High error rate", "Latency p95", "CPU saturation", "Memory usage", "Queue backlog", "Disk usage",
