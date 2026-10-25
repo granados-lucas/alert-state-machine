@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { BellIcon, FlowIcon, LayersIcon, MapIcon, PlusIcon, SyncIcon } from "./icons";
+import { ActivityIcon, BellIcon, FlowIcon, LayersIcon, MapIcon, PlusIcon, SyncIcon } from "./icons";
 
 const nav = [
   { href: "/", label: "Mapa de jornadas", icon: MapIcon },
@@ -13,6 +13,7 @@ const nav = [
   { href: "/journeys/new", label: "Nova jornada", icon: LayersIcon },
   { href: "/reconciliation", label: "Reconciliação", icon: SyncIcon },
   { href: "/graph", label: "Máquina de estados", icon: FlowIcon },
+  { href: "/status", label: "Status", icon: ActivityIcon },
 ];
 
 // Rota mais específica vence: /alerts/new não acende "Alertas".

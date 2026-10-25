@@ -29,10 +29,13 @@ src/
 │   ├── reconcile.ts          # reconciliação: lê os monitores do provedor e corrige divergências (respeita limite de uso)
 │   ├── journeys.ts           # criar/editar/trocar aplicações/remover jornada (com auditoria)
 │   ├── queries.ts            # mapa de jornadas, listagem paginada, detalhes
+│   ├── telemetry.ts          # estado da própria aplicação lido do banco (tela /status e /api/metrics)
+│   ├── observability.ts      # liga a telemetria ao banco, às fontes e ao pool reais; versão e uptime
 │   └── http.ts, runtime.ts   # identidade do ator (cabeçalho do SSO), erros, `after()`
 ├── app/
-│   ├── api/                  # webhooks/[provider], alerts, applications, health
-│   └── páginas               # / (mapa de jornadas), /journeys/[id], /journeys/new, /alerts, /alerts/[id], /alerts/new, /applications/[name], /graph
+│   ├── api/                  # webhooks/[provider], alerts, applications, health (+ live), metrics, mute-operations, reconciliation
+│   └── páginas               # / (mapa de jornadas), /journeys/[id], /journeys/new, /alerts, /alerts/[id], /alerts/new, /applications/[name], /graph, /status
+├── lib/metrics.ts            # registro mínimo de métricas (contadores, histogramas) em formato Prometheus
 ├── components/               # journey-map (mapa), journey-form, alert-graph (máquina, React Flow), alert-form, ui
 ├── db/                       # schema (8 tabelas), pool pg
 └── test/db.ts                # PGlite com as migrações reais, só para testes
@@ -109,6 +112,10 @@ Chaves `bigint` por identidade, `timestamptz`, FKs indexadas, índice parcial `(
 3. **Numa única transação**: grava `muted_*` no alerta, fecha a operação (`succeeded`) e audita `monitor_muted`/`monitor_unmuted`. Se o provedor recusa: fecha como `failed` e audita `monitor_mute_failed` (o alerta não muda). Depois, aplica o estado devolvido como evento sintético (`ingestEvent`, que também aciona remediações).
 
 Se o processo cair entre 2 e 3, o Datadog já aplicou, mas a operação continua `pending`. A **recuperação** (`recoverMuteOperations`, chamada a cada reconciliação e por `POST /api/mute-operations/recover`; `GET /api/mute-operations` lista as pendentes) repete a chamada ao provedor e conclui a gravação (`recovered = true` na operação e na auditoria). Um silêncio pendente cujo prazo já passou não é repetido: fecha como `failed`. A tela do alerta avisa quando há uma operação pendente. Premissa **não verificada**: repetir `mute` com o mesmo `end` (e `unmute`) no Datadog é idempotente; o código foi escrito assim, mas isso não foi confirmado numa conta real. Dois processos recuperando a mesma operação ao mesmo tempo repetem a chamada ao provedor (inofensivo se a premissa valer), mas só quem fecha a operação (`UPDATE … WHERE status = 'pending'`) grava o resultado e a auditoria.
+
+## Observabilidade
+
+`/api/health/live` (processo), `/api/health` (banco), `/api/metrics` (Prometheus) e a tela `/status`. Contadores e histogramas ficam na memória do processo (`src/lib/metrics.ts`, sem dependências); o que vive no banco (alertas por estado, último evento por fonte, silêncios pendentes, última reconciliação) é lido na coleta, então sobrevive a reinícios. O webhook propaga `X-Request-Id` para os logs. `/api/metrics` não tem token (decisão: o projeto não usa tokens compartilhados); o acesso é por rede. Detalhes, métricas e alertas sugeridos em `docs/observability.md`.
 
 ## Reconciliação
 

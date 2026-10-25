@@ -39,7 +39,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     sourceField: "overall_state (API)",
     rows: rowsOf(OVERALL_STATE_EQUIVALENCE),
     notes: [
-      `Webhook: o texto da transição (\`$ALERT_TRANSITION\`) é reconhecido por ${TRANSITION_EQUIVALENCE.map((r) => `"${r.contains}" → ${r.event}`).join(", ")}; sem transição reconhecida vale o tipo (\`$ALERT_TYPE\`): ${Object.entries(ALERT_TYPE_EQUIVALENCE).map(([k, v]) => `${k} → ${v}`).join(", ")}.`,
+      `Webhook: o texto da transição ($ALERT_TRANSITION) é reconhecido por ${TRANSITION_EQUIVALENCE.map((r) => `"${r.contains}" → ${r.event}`).join(", ")}; sem transição reconhecida vale o tipo ($ALERT_TYPE): ${Object.entries(ALERT_TYPE_EQUIVALENCE).map(([k, v]) => `${k} → ${v}`).join(", ")}.`,
     ],
     validated: false,
   },
@@ -50,7 +50,7 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     auth: "HTTP Basic na URL da assinatura do SNS (o segredo é a senha)",
     sourceField: "NewStateValue (alarme)",
     rows: rowsOf(ALARM_STATE_EQUIVALENCE),
-    notes: ["O CloudWatch não tem estado de aviso: nunca produz Aviso. A aplicação vem do texto `service:nome` na descrição do alarme e a prioridade de `priority:N`."],
+    notes: ["O CloudWatch não tem estado de aviso: nunca produz Aviso. A aplicação vem do texto service:nome na descrição do alarme e a prioridade de priority:N."],
     validated: false,
   },
   appdynamics: {

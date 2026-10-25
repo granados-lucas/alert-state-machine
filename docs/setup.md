@@ -149,3 +149,14 @@ A pedido do solicitante: o `ADMIN_API_TOKEN` saiu (API, formulários, simulador,
 | Simulador ponta a ponta | Validado | 0 divergências; reconciliação: 8 corrigidos, 3 criados, 2 mantidos, 1 ausente, 1×429 absorvido, nova execução idempotente |
 | Script `scripts/reconcile.mjs` | Executado contra a stack Docker | simulação e execução real: 200 monitores em 5 páginas, 0 divergências; saída 0 |
 | Chamada ao Datadog **real** | **Não executada** | Sem chaves/conta de teste |
+## Fase 8 — várias fontes, silêncio atômico, pesos e observabilidade (2026-10-25)
+
+| Item | Estado | Evidência |
+|---|---|---|
+| Pesos por prioridade (cor com rebaixamento e índice de saúde) | Validado | Testes de unidade e de integração; o oráculo independente do simulador confere cor e índice de 32 aplicações e 10 jornadas |
+| Silenciar atômico (`mute_operations`: intenção, provedor, resultado) | Validado contra o Datadog **simulado** | Testes com falha injetada na gravação (a operação fica pendente e a recuperação conclui, expira ou falha), 409 durante a janela de espera, recuperação concorrente sem duplicar. **Idempotência do mute/unmute no Datadog real não verificada** |
+| Migração 0007 | Validada em PostgreSQL 17 real **sobre dados existentes** | Stack com dados do modo demonstração atualizada sem perda |
+| Fontes CloudWatch (SNS), AppDynamics e genérica | Testadas com payloads montados a partir da documentação; **nunca com as ferramentas reais** | `docs/integrations/cloudwatch.md` e `appdynamics.md`: formatos do alarme, tipos de evento de encerramento e verificação de assinatura do SNS ficaram como pontos a validar |
+| Observabilidade (`/api/metrics`, `/api/health/live`, `/status`, `X-Request-Id`) | Validada com a stack Docker | Métricas lidas após o simulador (webhooks por fonte e resultado, silêncios, chamadas à API, reconciliações, remediações); formato **não** consumido por um Prometheus real |
+| `pnpm check` | Validado | 240 testes (cobertura 97,3% stmts, 94,4% branches, 97,6% funções, 97,9% linhas), 17 do simulador, 5 do script |
+| Simulador ponta a ponta (base zerada) | Validado | 0 divergências: 200 alertas, 96 remediações, silêncio, reconciliação e cenário multifonte (9 alertas de 3 fontes) |

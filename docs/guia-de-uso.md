@@ -249,6 +249,8 @@ Pré-requisito: `DD_API_KEY`, `DD_APP_KEY` (e `DD_SITE`) configurados e `DD_API_
 | **Máquina de estados** (`/graph`) | transições e a **tabela de equivalência** com os estados do Datadog |
 | **Reconciliação** (`/reconciliation`) | histórico de execuções, resumo e limites de uso vistos |
 
+A tela **Status** (`/status`) mostra a saúde da própria aplicação: banco, quando cada fonte entregou o último evento, silêncios pendentes, última reconciliação e falhas de remediação. Para monitorá-la com o Prometheus, veja `docs/observability.md`.
+
 ## 9. Problemas comuns
 
 | Sintoma | Causa provável | O que fazer |
@@ -270,6 +272,7 @@ Pré-requisito: `DD_API_KEY`, `DD_APP_KEY` (e `DD_SITE`) configurados e `DD_API_
 ## 10. Referências
 
 - `docs/integrations/datadog.md`, `cloudwatch.md`, `appdynamics.md`, `generic.md`: estudo de cada fonte, equivalência de estados, limites e o que **não** foi verificado.
+- `docs/observability.md`: saúde da própria aplicação (`/status`, `/api/metrics`, alertas sugeridos).
 - `docs/architecture.md`: arquitetura, auditoria e segurança (SSO, remediação).
 - `README.md`: Docker, simulador, modo demonstração e reconciliação periódica.
 - `PRODUCT.md`: escopo, premissas e pendências.

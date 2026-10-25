@@ -1,6 +1,7 @@
 import { ZodError } from "zod";
 import { getAuthUserHeader } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { increment } from "@/lib/metrics";
 import { ProviderApiError } from "@/providers/types";
 import { ConflictError, NotConfiguredError, NotFoundError, UnsupportedError, ValidationError } from "./errors";
 
@@ -42,6 +43,7 @@ export function errorResponse(error: unknown): Response {
   // Nome, código do Postgres e mensagem curta bastam para diagnosticar; `detail` do driver (com valores) fica de fora.
   const info = error instanceof Error ? { err: error.name, code: (error as { code?: string }).code, reason: error.message.slice(0, 200) } : { err: "unknown" };
   logger.error(info, "Unhandled request error");
+  increment("unhandled_errors_total");
   return json({ error: "internal error" }, 500);
 }
 

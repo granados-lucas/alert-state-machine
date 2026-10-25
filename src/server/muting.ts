@@ -2,7 +2,8 @@ import { and, eq, lt } from "drizzle-orm";
 import { z } from "zod";
 import { alerts, applications, auditLog, muteOperations } from "@/db/schema";
 import { MUTE_MAX_MINUTES, MUTE_MIN_MINUTES, muteUntil } from "@/domain/mute";
-import { ProviderApiError, type AlertProvider, type MonitorControl, type MonitorSnapshot, type NormalizedEvent } from "@/providers/types";
+import { increment } from "@/lib/metrics";
+import { ProviderApiError, ProviderRateLimitError, type AlertProvider, type MonitorControl, type MonitorSnapshot, type NormalizedEvent } from "@/providers/types";
 import type { Db } from "./db-types";
 import { ConflictError, NotConfiguredError, NotFoundError, UnsupportedError, ValidationError } from "./errors";
 import { ingestEvent, type IngestResult } from "./ingest";
@@ -101,14 +102,14 @@ async function begin(db: Db, alertId: number, request: Request, now: Date): Prom
 
 /** Passo 3 (sucesso): resultado no alerta + operação fechada + auditoria, tudo na mesma transação. */
 async function commit(db: Db, op: Operation, alert: AlertInfo, snapshot: MonitorSnapshot, now: Date) {
-  await db.transaction(async (tx) => {
+  const closedHere = await db.transaction(async (tx) => {
     // Só quem fecha a operação grava o resultado: uma recuperação concorrente que chegou depois não duplica nada.
     const closed = await tx
       .update(muteOperations)
       .set({ status: "succeeded", recovered: op.recovered, finishedAt: now })
       .where(and(eq(muteOperations.id, op.id), eq(muteOperations.status, "pending")))
       .returning({ id: muteOperations.id });
-    if (closed.length === 0) return;
+    if (closed.length === 0) return false;
     const providerState = snapshot.rawState ? { providerState: snapshot.rawState, providerStateAt: now } : {};
     if (op.action === "mute") {
       await tx
@@ -128,20 +129,22 @@ async function commit(db: Db, op: Operation, alert: AlertInfo, snapshot: Monitor
           ? { reason: op.reason, minutes: op.minutes, until: op.until?.toISOString(), scope: op.scope, providerState: snapshot.rawState, operationId: op.id, recovered: op.recovered }
           : { reason: op.reason, scope: op.scope, allScopes: op.allScopes, providerState: snapshot.rawState, operationId: op.id, recovered: op.recovered },
     });
+    return true;
   });
+  if (closedHere) increment("mute_operations_total", { action: op.action, status: "succeeded" });
 }
 
 /** Passo 3 (falha do provedor): fecha a operação como "failed" e audita; o alerta não muda. */
 async function fail(db: Db, op: Operation, alert: AlertInfo, error: unknown, now: Date) {
   const status = error instanceof ProviderApiError ? error.status : null;
   const message = error instanceof Error ? error.message : "unknown error";
-  await db.transaction(async (tx) => {
+  const closedHere = await db.transaction(async (tx) => {
     const closed = await tx
       .update(muteOperations)
       .set({ status: "failed", recovered: op.recovered, error: message.slice(0, 300), finishedAt: now })
       .where(and(eq(muteOperations.id, op.id), eq(muteOperations.status, "pending")))
       .returning({ id: muteOperations.id });
-    if (closed.length === 0) return;
+    if (closed.length === 0) return false;
     await tx.insert(auditLog).values({
       kind: "monitor_mute_failed",
       actor: op.actor,
@@ -149,13 +152,23 @@ async function fail(db: Db, op: Operation, alert: AlertInfo, error: unknown, now
       applicationId: alert.applicationId,
       details: { action: op.action, status, message, reason: op.reason, until: op.until?.toISOString() ?? null, scope: op.scope, operationId: op.id, recovered: op.recovered },
     });
+    return true;
   });
+  if (closedHere) increment("mute_operations_total", { action: op.action, status: "failed" });
 }
 
-function callProvider(control: MonitorControl, op: Operation, alert: AlertInfo) {
-  return op.action === "mute"
-    ? control.mute(alert.externalId, { until: op.until as Date, scope: op.scope ?? undefined })
-    : control.unmute(alert.externalId, { scope: op.scope ?? undefined, allScopes: op.allScopes });
+async function callProvider(control: MonitorControl, op: Operation, alert: AlertInfo) {
+  const labels = { provider: alert.provider, operation: op.action };
+  try {
+    const snapshot = await (op.action === "mute"
+      ? control.mute(alert.externalId, { until: op.until as Date, scope: op.scope ?? undefined })
+      : control.unmute(alert.externalId, { scope: op.scope ?? undefined, allScopes: op.allScopes }));
+    increment("provider_api_requests_total", { ...labels, outcome: "ok" });
+    return snapshot;
+  } catch (error) {
+    increment("provider_api_requests_total", { ...labels, outcome: error instanceof ProviderRateLimitError ? "rate_limited" : "error" });
+    throw error;
+  }
 }
 
 // O provedor informa o estado atual do monitor ao responder. Durante um silêncio ele não envia

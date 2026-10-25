@@ -22,7 +22,11 @@ export function getProvider(id: string): AlertProvider | undefined {
 /** Fontes com o webhook habilitado (segredo definido) e com a API de ações habilitada. */
 export function providerStatus() {
   return PROVIDER_IDS.map((id) => {
-    const provider = BUILDERS[id]();
-    return { id, webhook: getWebhookSecret(id) !== undefined, control: provider.control !== undefined, source: provider.source !== undefined };
+    try {
+      const provider = BUILDERS[id]();
+      return { id, webhook: getWebhookSecret(id) !== undefined, control: provider.control !== undefined, source: provider.source !== undefined };
+    } catch {
+      return { id, webhook: false, control: false, source: false }; // configuração inválida (ex.: segredo curto): fonte indisponível
+    }
   });
 }

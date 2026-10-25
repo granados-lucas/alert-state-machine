@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { alerts, applications, auditLog, remediationRuns, remediations, type Remediation } from "@/db/schema";
 import { ALERT_STATES, type AlertState } from "@/domain/alert-machine";
+import { increment } from "@/lib/metrics";
 import type { Db } from "./db-types";
 
 const SENSITIVE_HEADER = /authorization|token|secret|key|cookie|password/i;
@@ -187,6 +188,7 @@ async function runOne(db: Db, item: PendingRemediation, deps: RemediationDeps) {
   const result = await withSlot(() => execute(item.remediation, ctx, deps));
   const outcome: Outcome =
     result === "queue-full" ? { status: "skipped", httpStatus: null, durationMs: null, error: "remediation queue full" } : result;
+  increment("remediation_runs_total", { status: outcome.status });
   await db.transaction(async (tx) => {
     await tx.insert(remediationRuns).values({
       remediationId: item.remediation.id,

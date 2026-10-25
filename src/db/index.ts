@@ -27,6 +27,12 @@ export function getDb() {
   return cached.db;
 }
 
+/** Situação do pool (sem criá-lo): null enquanto ninguém usou o banco neste processo. */
+export function poolStats() {
+  const client = globals.__appPostgresPool;
+  return client ? { total: client.totalCount, idle: client.idleCount, waiting: client.waitingCount } : null;
+}
+
 // Use only for owned shutdown/tests, never after each request.
 export async function closeDatabase() {
   const client = globals.__appPostgresPool;

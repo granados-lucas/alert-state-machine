@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import { alerts, auditLog, reconciliationRuns } from "@/db/schema";
 import { transition } from "@/domain/alert-machine";
+import { increment, observe } from "@/lib/metrics";
 import { ProviderRateLimitError, type AlertProvider, type NormalizedEvent, type ProviderMonitor, type RateLimitInfo } from "@/providers/types";
 import type { Db } from "./db-types";
 import { ConflictError, NotConfiguredError, NotFoundError, UnsupportedError } from "./errors";
@@ -125,8 +126,11 @@ export async function executeReconciliation(db: Db, runId: number, input: Reconc
         summary.requests += 1;
         try {
           result = await source.listMonitors({ page, pageSize: input.pageSize, tags: input.tags.length ? input.tags : undefined });
+          increment("provider_api_requests_total", { provider: input.provider, operation: "list_monitors", outcome: "ok" });
         } catch (e) {
-          if (!(e instanceof ProviderRateLimitError) || attempt >= MAX_RATE_LIMIT_RETRIES) throw e;
+          const limited = e instanceof ProviderRateLimitError;
+          increment("provider_api_requests_total", { provider: input.provider, operation: "list_monitors", outcome: limited ? "rate_limited" : "error" });
+          if (!limited || attempt >= MAX_RATE_LIMIT_RETRIES) throw e;
           rateLimit = e.rateLimit;
           summary.rateLimited += 1;
           const wait = Math.min(Math.max(e.rateLimit.resetSeconds ?? e.rateLimit.period ?? 10, 1), MAX_RATE_LIMIT_WAIT_S);
@@ -170,6 +174,8 @@ export async function executeReconciliation(db: Db, runId: number, input: Reconc
   }
 
   const finished = now();
+  increment("reconciliation_runs_total", { provider: input.provider, status });
+  observe("reconciliation_duration_seconds", { provider: input.provider }, Math.max(0, (finished.getTime() - started.getTime()) / 1000));
   const [run] = await db
     .update(reconciliationRuns)
     .set({ status, summary, rateLimit, error, finishedAt: finished })

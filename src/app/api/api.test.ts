@@ -7,8 +7,11 @@ import type { Db } from "@/server/db-types";
 let db: Db;
 let close: () => Promise<void>;
 vi.mock("server-only", () => ({}));
-vi.mock("@/db", () => ({ getDb: () => db }));
-vi.mock("@/lib/logger", () => ({ logger: { info: vi.fn(), error: vi.fn() } }));
+vi.mock("@/db", () => ({ getDb: () => db, poolStats: () => null }));
+vi.mock("@/lib/logger", () => {
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), child: () => logger };
+  return { logger };
+});
 
 const SECRET = "datadog-secret-0123456789";
 
@@ -226,6 +229,51 @@ describe("GET /api/health", () => {
     const res = await health.GET();
     db.execute = orig;
     expect(res.status).toBe(503);
+  });
+});
+
+describe("observabilidade da aplicação", () => {
+  const metricsRoute = () => import("./metrics/route");
+  const liveRoute = () => import("./health/live/route");
+
+  it("liveness responde sem tocar o banco", async () => {
+    const response = (await liveRoute()).GET();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: "ok" });
+  });
+
+  it("webhook devolve e reaproveita o x-request-id; id estranho é trocado", async () => {
+    const send = (headers: Record<string, string>) => sendWebhook(dd(), { "x-webhook-secret": SECRET, ...headers });
+    expect((await send({ "x-request-id": "req-abc.123" })).headers.get("x-request-id")).toBe("req-abc.123");
+    const generated = (await send({})).headers.get("x-request-id");
+    expect(generated).toMatch(/^[0-9a-f-]{36}$/);
+    const replaced = (await send({ "x-request-id": "ruim com espaço e símbolos!" })).headers.get("x-request-id");
+    expect(replaced).toMatch(/^[0-9a-f-]{36}$/);
+    expect((await sendWebhook(dd(), { "x-webhook-secret": "errado-errado-errado" })).headers.get("x-request-id")).toBeTruthy();
+  });
+
+  it("/api/metrics conta os webhooks por fonte e resultado e publica o estado do banco", async () => {
+    await sendWebhook(dd()); // applied
+    await sendWebhook(dd(), { "x-webhook-secret": "errado-errado-errado" }); // unauthorized
+    await sendWebhook({ monitor_id: "1" }); // invalid
+    const response = await (await metricsRoute()).GET();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    const text = await response.text();
+    expect(text).toMatch(/global_alerts_webhook_requests_total\{provider="datadog",outcome="(applied|unchanged)"\} \d+/);
+    expect(text).toMatch(/global_alerts_webhook_requests_total\{provider="datadog",outcome="unauthorized"\} [1-9]/);
+    expect(text).toMatch(/global_alerts_webhook_requests_total\{provider="datadog",outcome="invalid"\} [1-9]/);
+    expect(text).toMatch(/global_alerts_webhook_duration_seconds_count\{provider="datadog"\} [1-9]/);
+    expect(text).toContain("global_alerts_database_up 1");
+    expect(text).toMatch(/global_alerts_alerts\{state="alert"\} \d+/);
+    expect(text).not.toContain(SECRET);
+  });
+
+  it("fonte desconhecida não cria rótulo novo (a cardinalidade é fixa)", async () => {
+    await webhook.POST(req("/x", { method: "POST" }), ctx({ provider: "qualquer-coisa-12345" }));
+    const text = await (await (await metricsRoute()).GET()).text();
+    expect(text).toContain('provider="unknown",outcome="unknown_provider"');
+    expect(text).not.toContain("qualquer-coisa-12345");
   });
 });
 
