@@ -7,23 +7,22 @@ import {
   mergeBuckets,
   summarize,
   weightOf,
-  worstState,
   type Bucket,
 } from "./application-status";
 
 const b = (state: Bucket["state"], priority: number | null, n = 1): Bucket => ({ state, priority, n });
 
-describe("worstState", () => {
+describe("cor (pior estado)", () => {
   it("segue a ordem alert > warn > no_data > ok", () => {
-    expect(worstState({ ok: 2, alert: 1 })).toBe("alert");
-    expect(worstState({ ok: 5, warn: 1, no_data: 3 })).toBe("warn");
-    expect(worstState({ ok: 5, no_data: 1 })).toBe("no_data");
-    expect(worstState({ ok: 1 })).toBe("ok");
+    expect(summarize([b("ok", 1, 2), b("alert", 1)]).status).toBe("alert");
+    expect(summarize([b("ok", 1, 5), b("warn", 1), b("no_data", 1, 3)]).status).toBe("warn");
+    expect(summarize([b("ok", 1, 5), b("no_data", 1)]).status).toBe("no_data");
+    expect(summarize([b("ok", 1)]).status).toBe("ok");
   });
 
-  it("retorna null sem alertas ativos", () => {
-    expect(worstState(emptyCounts())).toBeNull();
-    expect(worstState({})).toBeNull();
+  it("é null sem alertas ativos", () => {
+    expect(summarize([]).status).toBeNull();
+    expect(summarize([b("alert", 1, 0)]).status).toBeNull();
   });
 });
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { eventTo } from "@/domain/alert-machine";
-import { parsePriority, parseTime, safeHttpUrl, unresolved } from "../common";
+import { looseText as text, parsePriority, parseTime, safeHttpUrl, unresolved } from "../common";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 import { EVENT_TYPE_EQUIVALENCE } from "./states";
 
@@ -9,7 +9,6 @@ import { EVENT_TYPE_EQUIVALENCE } from "./states";
  * docs/integrations/appdynamics.md (variáveis `${latestEvent.*}` e `${policy.*}`). Baseado na documentação;
  * NUNCA validado com um controller real. A prioridade não existe no AppDynamics: vai fixa no modelo (um por prioridade).
  */
-const text = z.union([z.string(), z.number()]).transform(String);
 const payloadSchema = z.object({
   event_id: text.pipe(z.string().min(1)),
   event_type: z.string().min(1),

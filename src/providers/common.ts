@@ -1,4 +1,9 @@
+import { z } from "zod";
+
 // Utilitários dos adaptadores: nada aqui conhece o formato de uma ferramenta específica.
+
+/** Variáveis de modelo chegam como texto, mas números são aceitos por tolerância. */
+export const looseText = z.union([z.string(), z.number()]).transform(String);
 
 // A aplicação de um monitor vem da tag service: (fallback app:, application:); sem elas, "unassigned".
 export function applicationFromTags(tags: string[]) {

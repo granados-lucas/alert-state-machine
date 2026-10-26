@@ -1,6 +1,5 @@
 // Reproduz o que a integração Webhooks do Datadog envia com o payload personalizado
 // documentado em docs/integrations/datadog.md (variáveis $ID, $ALERT_ID, $ALERT_TRANSITION...).
-export const STATES = ["ok", "warn", "alert", "no_data"];
 
 const TRANSITION = { ok: "Recovered", warn: "Warn", alert: "Triggered", no_data: "No Data" };
 const ALERT_TYPE = { ok: "success", warn: "warning", alert: "error", no_data: "warning" };

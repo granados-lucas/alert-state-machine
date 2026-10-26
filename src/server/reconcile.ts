@@ -5,7 +5,7 @@ import { transition } from "@/domain/alert-machine";
 import { increment, observe } from "@/lib/metrics";
 import { ProviderRateLimitError, type AlertProvider, type NormalizedEvent, type ProviderMonitor, type RateLimitInfo } from "@/providers/types";
 import type { Db } from "./db-types";
-import { ConflictError, NotConfiguredError, NotFoundError, UnsupportedError } from "./errors";
+import { ConflictError, isUniqueViolation, NotConfiguredError, NotFoundError, UnsupportedError } from "./errors";
 import { ingestEvent } from "./ingest";
 import type { PendingRemediation } from "./remediation";
 
@@ -59,11 +59,6 @@ const emptySummary = () => ({
   details: [] as Detail[],
   mutes: null as null | { found: number; succeeded: number; failed: number; errors: number },
 });
-
-const isUniqueViolation = (error: unknown) => {
-  const e = error as { code?: string; cause?: { code?: string } };
-  return e?.code === "23505" || e?.cause?.code === "23505";
-};
 
 /** Cria o registro da execução (no máximo uma por provedor) e valida que o provedor sabe listar monitores. */
 export async function startReconciliation(db: Db, input: ReconcileOptions, actor: string, trigger: "manual" | "schedule", deps: ReconcileDeps) {

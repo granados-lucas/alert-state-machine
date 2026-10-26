@@ -37,7 +37,6 @@ export const remediationInputSchema = z
   .refine((v) => v.mode === "api" || (v.method === "POST" && !v.bodyTemplate), {
     message: "mode webhook always sends POST with the standard payload",
   });
-export type RemediationInput = z.infer<typeof remediationInputSchema>;
 
 export type PendingRemediation = { remediation: Remediation; state: AlertState; previousState: AlertState | null; eventId: number | null };
 

@@ -1,10 +1,9 @@
 import { z } from "zod";
 import { eventTo, ALERT_STATES } from "@/domain/alert-machine";
-import { applicationFromTags, parsePriority, parseTime, safeHttpUrl } from "../common";
+import { applicationFromTags, looseText as text, parsePriority, parseTime, safeHttpUrl } from "../common";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 
 // Formato canônico para qualquer fonte sem adaptador próprio (script, Alertmanager via proxy, ferramenta interna).
-const text = z.union([z.string(), z.number()]).transform(String);
 const payloadSchema = z.object({
   event_id: text.pipe(z.string().min(1)),
   monitor_id: text.pipe(z.string().min(1)),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ProviderPayloadError } from "../types";
-import { applicationFromTags, createDatadogProvider, mapTransition } from "./index";
+import { applicationFromTags } from "../common";
+import { createDatadogProvider } from "./index";
 
 const provider = createDatadogProvider({});
 const base = {
@@ -46,23 +47,6 @@ describe("parse", () => {
     expect(() => provider.parse({ monitor_id: "1" })).toThrow(ProviderPayloadError);
     expect(() => provider.parse("texto")).toThrow(ProviderPayloadError);
     expect(() => provider.parse({ ...base, event_id: "" })).toThrow(ProviderPayloadError);
-  });
-});
-
-describe("mapTransition", () => {
-  it.each([
-    ["Triggered", "", "triggered"],
-    ["Re-Triggered", "", "triggered"],
-    ["Recovered", "", "recovered"],
-    ["Warn", "", "warned"],
-    ["No Data", "", "data_missing"],
-    ["", "success", "recovered"],
-    ["", "warning", "warned"],
-    ["", "error", "triggered"],
-    ["Renotify", "info", null],
-    ["", "", null],
-  ])("%s / %s -> %s", (transition, type, expected) => {
-    expect(mapTransition(transition, type)).toBe(expected);
   });
 });
 

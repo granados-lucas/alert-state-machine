@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { applicationFromTags, parsePriority, safeHttpUrl } from "../common";
+import { applicationFromTags, looseText as text, parsePriority, safeHttpUrl } from "../common";
 import { ProviderPayloadError, type AlertProvider, type NormalizedEvent } from "../types";
 import { createDatadogControl, type DatadogApiConfig } from "./api";
 import { createDatadogSource } from "./source";
@@ -7,7 +7,6 @@ import { mapTransition } from "./states";
 
 // Payload configurado na integração Webhooks do Datadog (ver docs/integrations/datadog.md).
 // Variáveis `$X` do Datadog chegam como texto; números são aceitos por tolerância.
-const text = z.union([z.string(), z.number()]).transform(String);
 const payloadSchema = z.object({
   event_id: text.pipe(z.string().min(1)),
   monitor_id: text.pipe(z.string().min(1)),
@@ -19,10 +18,6 @@ const payloadSchema = z.object({
   last_updated: text.default(""),
   link: z.string().default(""),
 });
-
-export { mapTransition };
-
-export { applicationFromTags };
 
 export function createDatadogProvider(options: { api?: DatadogApiConfig; fetch?: typeof fetch }): AlertProvider {
   return {

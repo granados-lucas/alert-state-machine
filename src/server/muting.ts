@@ -5,7 +5,7 @@ import { MUTE_MAX_MINUTES, MUTE_MIN_MINUTES, muteUntil } from "@/domain/mute";
 import { increment } from "@/lib/metrics";
 import { ProviderApiError, ProviderRateLimitError, type AlertProvider, type MonitorControl, type MonitorSnapshot, type NormalizedEvent } from "@/providers/types";
 import type { Db } from "./db-types";
-import { ConflictError, NotConfiguredError, NotFoundError, UnsupportedError, ValidationError } from "./errors";
+import { ConflictError, isUniqueViolation, NotConfiguredError, NotFoundError, UnsupportedError, ValidationError } from "./errors";
 import { ingestEvent, type IngestResult } from "./ingest";
 
 /**
@@ -68,11 +68,6 @@ function controlFor(alert: { provider: string }, deps: MuteDeps): MonitorControl
   if (!provider.control) throw new NotConfiguredError("the provider API is not configured (DD_API_KEY / DD_APP_KEY)");
   return provider.control;
 }
-
-const isUniqueViolation = (error: unknown) => {
-  const e = error as { code?: string; cause?: { code?: string } };
-  return e?.code === "23505" || e?.cause?.code === "23505";
-};
 
 type Request = { action: "mute" | "unmute"; actor: string; reason: string | null; minutes?: number; until?: Date; scope?: string; allScopes?: boolean };
 

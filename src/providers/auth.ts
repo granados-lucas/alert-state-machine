@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 
-export const WEBHOOK_SECRET_HEADER = "x-webhook-secret";
+const WEBHOOK_SECRET_HEADER = "x-webhook-secret";
 
 const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 

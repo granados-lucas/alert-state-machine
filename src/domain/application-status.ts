@@ -77,15 +77,6 @@ export function mergeBuckets(lists: Bucket[][]): Bucket[] {
   return [...merged.values()];
 }
 
-// Sem alertas ativos não há estado (null): aparece neutro no mapa.
-export function worstState(counts: Partial<Record<AlertState, number>>): AlertState | null {
-  let worst: AlertState | null = null;
-  for (const state of Object.keys(SEVERITY) as AlertState[]) {
-    if ((counts[state] ?? 0) > 0 && (worst === null || SEVERITY[state] > SEVERITY[worst])) worst = state;
-  }
-  return worst;
-}
-
 /** Ordena do mais grave para o menos grave (alert primeiro, ok por último). */
 export const bySeverityDesc = (a: AlertState | null, b: AlertState | null) => (b === null ? -1 : SEVERITY[b]) - (a === null ? -1 : SEVERITY[a]);
 

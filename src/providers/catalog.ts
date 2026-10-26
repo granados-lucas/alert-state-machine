@@ -19,8 +19,6 @@ export type ProviderInfo = {
   sourceField: string;
   rows: EquivalenceRow[];
   notes: string[];
-  /** Verificado contra um sistema real? Nenhum adaptador foi (ver docs/integrations). */
-  validated: false;
 };
 
 const rowsOf = (table: Record<string, { state: AlertState | null; reason: string }>) =>
@@ -35,7 +33,6 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     notes: [
       `Webhook: o texto da transição ($ALERT_TRANSITION) é reconhecido por ${TRANSITION_EQUIVALENCE.map((r) => `"${r.contains}" → ${r.event}`).join(", ")}; sem transição reconhecida vale o tipo ($ALERT_TYPE): ${Object.entries(ALERT_TYPE_EQUIVALENCE).map(([k, v]) => `${k} → ${v}`).join(", ")}.`,
     ],
-    validated: false,
   },
   cloudwatch: {
     id: "cloudwatch",
@@ -43,7 +40,6 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     sourceField: "NewStateValue (alarme)",
     rows: rowsOf(ALARM_STATE_EQUIVALENCE),
     notes: ["O corpo do SNS não é personalizável, então não leva o campo source: o envelope é reconhecido. O CloudWatch não tem estado de aviso: nunca produz Aviso. A aplicação vem do texto service:nome na descrição do alarme e a prioridade de priority:N."],
-    validated: false,
   },
   appdynamics: {
     id: "appdynamics",
@@ -51,7 +47,6 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     sourceField: "eventType (política)",
     rows: rowsOf(EVENT_TYPE_EQUIVALENCE),
     notes: ["Tipo de evento desconhecido mantém o estado atual. O AppDynamics não tem estado \"sem dados\" nas políticas; a prioridade é fixa no modelo da ação (um modelo por prioridade)."],
-    validated: false,
   },
   generic: {
     id: "generic",
@@ -59,7 +54,6 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     sourceField: "state",
     rows: ALERT_STATES.map((state) => ({ raw: state, state, reason: "O estado informado é aplicado como está." })),
     notes: ["Para qualquer fonte sem adaptador: o remetente já informa o estado equivalente."],
-    validated: false,
   },
 };
 
