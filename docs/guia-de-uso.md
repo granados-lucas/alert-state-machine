@@ -252,6 +252,7 @@ Pré-requisito: `DD_API_KEY`, `DD_APP_KEY` (e `DD_SITE`) configurados e `DD_API_
 | **Detalhe do alerta** | estado, **estado bruto lido no Datadog** (e aviso se divergir), jornadas, remediações e execuções, silêncio e a **auditoria completa** (quem, quando, antes/depois) |
 | **Máquina de estados** (`/graph`) | transições e, para **cada fonte**, a tabela de equivalência com os estados dela |
 | **Reconciliação** (`/reconciliation`) | histórico de execuções, resumo e limites de uso vistos |
+| **Documentação** (`/docs`) | este manual e os guias de integração dentro da própria aplicação (a mesma versão que está rodando) |
 | **Status** (`/status`) | saúde da própria aplicação: banco, último evento por fonte, silêncios pendentes, última reconciliação, remediações |
 
 A tela **Status** (`/status`) mostra a saúde da própria aplicação: banco, quando cada fonte entregou o último evento, silêncios pendentes, última reconciliação e falhas de remediação. Para monitorá-la com o Prometheus, veja `docs/observability.md`.

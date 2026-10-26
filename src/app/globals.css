@@ -96,3 +96,139 @@ body {
 .flash-ring {
   animation: flash-ring 1.2s ease-out 2;
 }
+
+/* Documentação (/docs): Markdown do repositório renderizado com os tokens do produto. */
+.doc {
+  max-width: 78ch;
+  line-height: 1.7;
+}
+.doc > :first-child {
+  margin-top: 0;
+}
+.doc h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  margin: 0 0 1rem;
+}
+.doc h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 2.5rem 0 0.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--color-line);
+  scroll-margin-top: 1.5rem;
+}
+.doc h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 1.75rem 0 0.5rem;
+  scroll-margin-top: 1.5rem;
+}
+.doc h4 {
+  font-weight: 600;
+  margin: 1.25rem 0 0.4rem;
+}
+.doc p,
+.doc ul,
+.doc ol,
+.doc blockquote,
+.doc pre,
+.doc .doc-table {
+  margin: 0 0 1rem;
+}
+.doc ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.doc ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.doc li {
+  margin: 0.25rem 0;
+}
+.doc li > ul,
+.doc li > ol {
+  margin: 0.25rem 0 0;
+}
+.doc a {
+  color: var(--color-accent-soft);
+  text-underline-offset: 4px;
+}
+.doc a:hover {
+  text-decoration: underline;
+}
+.doc strong {
+  color: var(--color-fg);
+  font-weight: 600;
+}
+.doc code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  padding: 0.1em 0.35em;
+  overflow-wrap: anywhere;
+}
+.doc pre {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+.doc pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.82rem;
+  overflow-wrap: normal;
+}
+.doc blockquote {
+  border-left: 3px solid var(--color-warn);
+  background: rgb(245 158 11 / 0.07);
+  border-radius: 0 12px 12px 0;
+  padding: 0.6rem 1rem;
+}
+.doc blockquote > :last-child {
+  margin-bottom: 0;
+}
+.doc hr {
+  border: 0;
+  border-top: 1px solid var(--color-line);
+  margin: 2rem 0;
+}
+.doc .doc-table {
+  overflow-x: auto;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+}
+.doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.doc th {
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+  background: var(--color-surface);
+  padding: 0.5rem 0.75rem;
+  white-space: nowrap;
+}
+.doc td {
+  padding: 0.6rem 0.75rem;
+  vertical-align: top;
+  border-top: 1px solid var(--color-line);
+}
+.doc td code {
+  white-space: normal;
+}

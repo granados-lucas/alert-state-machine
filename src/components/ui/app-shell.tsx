@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { ActivityIcon, BellIcon, FlowIcon, LayersIcon, MapIcon, PlusIcon, SyncIcon } from "./icons";
+import { ActivityIcon, BellIcon, BookIcon, FlowIcon, LayersIcon, MapIcon, PlusIcon, SyncIcon } from "./icons";
 
 const nav = [
   { href: "/", label: "Mapa de jornadas", icon: MapIcon },
@@ -14,12 +14,14 @@ const nav = [
   { href: "/reconciliation", label: "Reconciliação", icon: SyncIcon },
   { href: "/graph", label: "Máquina de estados", icon: FlowIcon },
   { href: "/status", label: "Status", icon: ActivityIcon },
+  { href: "/docs", label: "Documentação", icon: BookIcon },
 ];
 
 // Rota mais específica vence: /alerts/new não acende "Alertas".
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/" || pathname.startsWith("/applications") || (pathname.startsWith("/journeys/") && pathname !== "/journeys/new");
   if (href === "/alerts") return pathname === "/alerts" || (pathname.startsWith("/alerts/") && pathname !== "/alerts/new");
+  if (href === "/docs") return pathname === "/docs" || pathname.startsWith("/docs/");
   return pathname === href;
 }
 

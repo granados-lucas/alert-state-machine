@@ -6,8 +6,11 @@ node_modules
 graphify-out
 coverage
 simulator
-docs
+docs/design-reference
 *.md
+# Lidos no build pela página /docs (src/server/docs.ts)
+!PRODUCT.md
+!docs/**/*.md
 .env*
 !.env.example
 tsconfig.tsbuildinfo

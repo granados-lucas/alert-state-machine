@@ -47,6 +47,7 @@ pnpm check        # lint, tipos, regras, testes com cobertura, testes do simulad
 | Alertas, filtros e detalhe com remediações, execuções e auditoria | `/alerts`, `/alerts/[id]` |
 | Criar alerta com remediação opcional | `/alerts/new` |
 | Máquina de estados e equivalência de estados de cada fonte | `/graph` |
+| Documentação e manual de uso dentro da aplicação (Markdown do repositório, gerado no build) | `/docs`, `/docs/manual`, `/docs/datadog`, `/docs/cloudwatch`, `/docs/appdynamics`… |
 | Saúde da própria aplicação | `/status`; `GET /api/metrics` (Prometheus), `GET /api/health`, `GET /api/health/live` ([detalhes](docs/observability.md)) |
 | Silenciar/reativar o monitor no Datadog (atômico: operações interrompidas são concluídas sozinhas) | botão na página do alerta; `POST /api/alerts/[id]/mute` e `/unmute`; `GET /api/mute-operations` e `POST /api/mute-operations/recover` ([detalhes](docs/integrations/datadog.md#silenciar-monitores-pela-api-ação-da-aplicação-no-datadog)) |
 | Reconciliação com o Datadog (tela, API e script) | `/reconciliation`; `POST /api/reconciliation`; `scripts/reconcile.mjs` ([detalhes](docs/integrations/datadog.md#reconciliação-listar-monitores-e-respeitar-o-limite-de-uso)) |
