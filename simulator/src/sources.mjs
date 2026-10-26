@@ -122,3 +122,58 @@ export async function multiSourceScenario({ client, secret, log, runId = Date.no
   log(`multi-source scenario: ${expected.length} alerts from ${new Set(expected.map((e) => e.source)).size} sources checked`);
   return problems;
 }
+
+// ---- Modo demonstração: as outras fontes também mudam de estado sozinhas, pelo mesmo webhook.
+const DEMO_PER_SOURCE = 4;
+const DEMO_PROBLEMS = { cloudwatch: [["alert", 3], ["no_data", 1]], appdynamics: [["warn", 3], ["alert", 2]], generic: [["warn", 3], ["alert", 2], ["no_data", 1]] };
+
+/** Alarmes fixos (ids estáveis: reiniciar o simulador não cria alertas novos), em aplicações próprias src-<fonte>-N. */
+export function demoSourceAlarms() {
+  return Object.keys(SOURCES).flatMap((source) =>
+    Array.from({ length: DEMO_PER_SOURCE }, (_, i) => ({
+      source,
+      state: null,
+      lastTs: 0,
+      alarm: { name: `demo-${source}-${i}`, application: `src-${source}-${i}`, priority: 1 + ((i * 2) % 5) },
+    })),
+  );
+}
+
+/** Uma jornada com as aplicações das outras fontes, para elas aparecerem no mapa. */
+export const demoSourceJourney = (alarms) => ({
+  name: "Fontes externas",
+  description: "Alertas de CloudWatch, AppDynamics e genérica (simulador)",
+  applications: [...new Set(alarms.map((a) => a.alarm.application))],
+});
+
+async function emit({ client, secret, entry, state, seq }) {
+  const def = SOURCES[entry.source];
+  entry.lastTs = Math.max(Date.now(), entry.lastTs + 1);
+  const eventId = `${entry.source}-demo-${entry.lastTs}-${seq}`;
+  const r = await client.sendTo(JSON.stringify(def.payload(entry.alarm, state, entry.lastTs, eventId)), def.headers(secret));
+  if (r.status === 200) entry.state = state;
+  return r.status === 200;
+}
+
+let sequence = 0;
+
+/** Estado inicial: tudo ok. Devolve quantos eventos foram aceitos. */
+export async function seedDemoSources({ client, secret, alarms }) {
+  const results = await Promise.all(alarms.map((entry) => emit({ client, secret, entry, state: "ok", seq: ++sequence })));
+  return results.filter(Boolean).length;
+}
+
+/** Uma rodada: alarmes com problema se recuperam com `recoverChance`; um alarme saudável degrada com `degradeChance`. */
+export async function demoSourceRound({ client, secret, alarms, rng, degradeChance = 0.05, recoverChance = 0.03 }) {
+  const events = [];
+  for (const entry of alarms) if (entry.state && entry.state !== "ok" && rng.chance(recoverChance)) events.push([entry, "ok"]);
+  if (rng.chance(degradeChance)) {
+    const healthy = alarms.filter((e) => e.state === "ok" && !events.some(([x]) => x === e));
+    if (healthy.length) {
+      const entry = rng.pick(healthy);
+      events.push([entry, rng.weighted(DEMO_PROBLEMS[entry.source])]);
+    }
+  }
+  const results = await Promise.all(events.map(([entry, state]) => emit({ client, secret, entry, state, seq: ++sequence })));
+  return results.filter(Boolean).length;
+}

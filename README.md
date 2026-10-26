@@ -24,7 +24,7 @@ docker compose --profile demo stop demo         # pausa as mudanças
 docker compose --profile demo down -v           # desliga e apaga os dados
 ```
 
-As telas de mapa e alertas atualizam a cada 5 s (caixa "Atualizar" no topo); aplicações cujo estado mudou piscam por 3 s.
+O modo demonstração também emite eventos de **CloudWatch, AppDynamics e genérica** (12 alarmes na jornada "Fontes externas"), todos pelo mesmo webhook único e segredo. As telas de mapa e alertas atualizam a cada 5 s (caixa "Atualizar" no topo); aplicações cujo estado mudou piscam por 3 s.
 
 Os valores padrão do `compose.yaml` (senhas e tokens) são só para desenvolvimento local; as portas ficam ligadas a `127.0.0.1`. Por padrão a aplicação fala com o **Datadog simulado** do simulador (`DD_API_BASE_URL`); para o Datadog real, deixe `DD_API_BASE_URL` vazio e defina `DD_SITE`, `DD_API_KEY` e `DD_APP_KEY` em `.env`. Para outro ambiente, copie `.env.docker.example` para `.env` e defina segredos próprios.
 

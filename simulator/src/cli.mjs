@@ -8,7 +8,7 @@ import { startReceiver } from "./receiver.mjs";
 import { createRng } from "./rng.mjs";
 import { reconcileScenario } from "./reconcile-scenario.mjs";
 import { CALM_WEIGHTS, churn, createJourneys, healthRound, muteScenario, seed, verify } from "./scenario.mjs";
-import { multiSourceScenario } from "./sources.mjs";
+import { demoSourceAlarms, demoSourceJourney, demoSourceRound, multiSourceScenario, seedDemoSources } from "./sources.mjs";
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -74,12 +74,22 @@ if (command === "stream") {
   // Divergências do oráculo são esperadas quando já existem dados de execuções anteriores.
   const pause = Number(values.interval);
   const streamRng = createRng(Date.now() % 2147483647);
-  log(`streaming health changes every ${pause} ms until stopped (${catalog.monitors.length} monitors)`);
+  // As outras fontes (CloudWatch, AppDynamics, genérica) também mudam de estado, pelo mesmo webhook e segredo.
+  const secret = required("WEBHOOK_SECRET");
+  const extras = demoSourceAlarms();
+  const seedExtras = async () => {
+    const accepted = await seedDemoSources({ client, secret, alarms: extras });
+    await client.createJourney(demoSourceJourney(extras)); // 409 se já existe
+    return accepted;
+  };
+  log(`other sources: ${await seedExtras()}/${extras.length} alarms seeded (cloudwatch, appdynamics, generic)`);
+  log(`streaming health changes every ${pause} ms until stopped (${catalog.monitors.length} monitors + ${extras.length} alarms from other sources)`);
   let rounds = 0;
   let sent = 0;
   for (;;) {
     try {
       sent += await healthRound({ client, catalog, model, rng: streamRng, isMuted: fake.isMuted });
+      sent += await demoSourceRound({ client, secret, alarms: extras, rng: streamRng });
     } catch (error) {
       log(`round failed (${error instanceof Error ? error.message : "error"}); retrying`);
       await new Promise((r) => setTimeout(r, 5000));
@@ -97,6 +107,7 @@ if (command === "stream") {
           await client.sendWebhook(buildWebhookPayload(monitor, state, { at }));
         }
         await createJourneys({ client, catalog, log });
+        await seedExtras();
       }
     } catch (error) {
       log(`resync failed (${error instanceof Error ? error.message : "error"}); retrying`);

@@ -232,3 +232,23 @@ test("outras fontes: payloads no formato de cada ferramenta, todos para o webhoo
   assert.equal(SOURCES.generic.payload(alarm, "no_data", 1, "e1").state, "no_data");
 
 });
+
+test("demonstração: as outras fontes semeiam em ok e depois degradam e se recuperam pelo mesmo webhook", async () => {
+  const { demoSourceAlarms, demoSourceJourney, demoSourceRound, seedDemoSources } = await import("../src/sources.mjs");
+  const alarms = demoSourceAlarms();
+  assert.equal(alarms.length, 12);
+  assert.equal(new Set(alarms.map((a) => a.alarm.name)).size, 12); // ids estáveis e únicos
+  assert.equal(demoSourceJourney(alarms).applications.length, 12);
+
+  const sent = [];
+  const client = { sendTo: async (body, headers) => (sent.push({ body: JSON.parse(body), headers }), { status: 200, json: {} }) };
+  assert.equal(await seedDemoSources({ client, secret: "s3cret-s3cret-s3cret", alarms }), 12);
+  assert.ok(alarms.every((a) => a.state === "ok"));
+
+  const always = { chance: () => true, pick: (list) => list[0], weighted: (list) => list[0][0] };
+  assert.equal(await demoSourceRound({ client, secret: "s3cret-s3cret-s3cret", alarms, rng: always }), 1);
+  const degraded = alarms.filter((a) => a.state !== "ok");
+  assert.equal(degraded.length, 1);
+  assert.equal(await demoSourceRound({ client, secret: "s3cret-s3cret-s3cret", alarms, rng: always }), 2); // 1 recupera e 1 degrada
+  assert.equal(new Set(sent.map((s) => s.body.event_id ?? s.body.MessageId)).size, sent.length); // ids de evento únicos
+});

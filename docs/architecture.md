@@ -143,6 +143,8 @@ Um alerta pode acionar outra ferramenta ao entrar em estados escolhidos (padrão
 
 ## Simulador do Datadog (`simulator/`)
 
+**Várias fontes:** além do Datadog, o simulador envia eventos de CloudWatch (envelope do SNS com Basic), AppDynamics e genérica pelo mesmo `POST /api/webhooks` e segredo (`simulator/src/sources.mjs`). No `run` há um cenário com 9 alarmes (sequências de estados, reentrega duplicada, segredo errado) conferido contra a aplicação; no modo `stream` (demonstração) 12 alarmes das outras fontes mudam de estado sozinhos e ficam na jornada "Fontes externas".
+
 Aplicação separada (próprio `package.json` e Dockerfile, sem dependências, sem importar código da principal). Só usa a API HTTP: registra alertas e jornadas, envia webhooks no formato do Datadog, expõe um receptor de remediação e um **Datadog simulado** (`/api/v1/monitor/{id}/mute|unmute`, com chaves, prazo e `overall_state`; monitores silenciados não geram webhooks). Gera 32 aplicações, 200 alertas e 8 jornadas (com aplicações compartilhadas e 2 sem jornada) de forma determinística (semente); envia 1500 eventos em rodadas concorrentes, incluindo duplicados simultâneos, fora de ordem, com segredo errado e malformados. Ao final compara o estado de cada alerta, a trilha de auditoria, o status de cada aplicação e de cada jornada, a composição das jornadas e a contagem exata de chamadas de remediação com um oráculo independente. Também exercita o silêncio: 6 monitores silenciados (1 com escopo), estado que muda no Datadog sem webhook, 3 reativados com sincronização do estado, 3 mantidos silenciados e 1 recusado com 403.
 
 ## Decisões
