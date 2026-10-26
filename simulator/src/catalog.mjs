@@ -49,7 +49,7 @@ export function generateCatalog({ apps = 32, alerts = 200, seed = 42, idBase = 1
         monitorId,
         application,
         name: `${application}: ${CHECKS[(n + appIndex) % CHECKS.length]} #${monitorId}`,
-        priority: rng.pick([1, 2, 2, 3, 3, 4, null]),
+        priority: rng.pick([1, 2, 2, 3, 3, 4, 4, 5, 5, null]),
         team: rng.pick(TEAMS),
         registerViaApi,
         // Remediação só existe em alertas registrados pela API (é onde ela se configura).
