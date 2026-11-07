@@ -22,6 +22,16 @@ function ago(value: Date | null) {
   return `há ${Math.round(seconds / 86400)} dias`;
 }
 
+const EVALUATOR_STALE_MS = 120_000;
+
+function evaluatorFact(t: Awaited<ReturnType<typeof currentTelemetry>>): { value: string; tone?: "ok" | "alert" } {
+  const total = Object.values(t.combinationsByState).reduce((sum, n) => sum + n, 0);
+  const last = t.combinationEvaluatorLastRunAt;
+  if (!last) return total === 0 ? { value: "Sem combinações" } : { value: "Nunca rodou", tone: "alert" };
+  const late = Date.now() - last.getTime() > EVALUATOR_STALE_MS;
+  return { value: `${late ? "Parado" : "Em dia"} · ${ago(last)}`, tone: late ? "alert" : "ok" };
+}
+
 function Fact({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" | "alert" }) {
   return (
     <Card className="flex flex-col gap-1">
@@ -35,6 +45,7 @@ export default async function StatusPage() {
   const t = await currentTelemetry();
   const labels = new Map(listProviderInfo().map((p) => [p.id, p.label]));
   const remediation = t.recentRemediations;
+  const evaluator = evaluatorFact(t);
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-6 lg:px-8">
@@ -44,7 +55,7 @@ export default async function StatusPage() {
         actions={<AutoRefresh seconds={15} />}
       />
 
-      <section aria-label="Resumo" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <section aria-label="Resumo" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Fact label="Banco de dados" value={t.db.up ? `Conectado · ${t.db.latencyMs} ms` : "Indisponível"} tone={t.db.up ? "ok" : "alert"} />
         <Fact label="Silêncios pendentes" value={t.pendingMutes.count === 0 ? "Nenhum" : `${t.pendingMutes.count} (mais antigo ${ago(t.pendingMutes.oldestAt)})`} tone={t.pendingMutes.count === 0 ? "ok" : "warn"} />
         <Fact
@@ -52,6 +63,7 @@ export default async function StatusPage() {
           value={remediation.total === 0 ? "Nenhuma ainda" : `${remediation.failed} falha(s), ${remediation.skipped} pulada(s)`}
           tone={remediation.total === 0 ? undefined : remediation.failed > 0 ? "warn" : "ok"}
         />
+        <Fact label="Avaliador de combinações" value={evaluator.value} tone={evaluator.tone} />
         <Fact label="Versão · no ar há" value={`${appVersion()} · ${uptimeMinutes()} min`} />
       </section>
 

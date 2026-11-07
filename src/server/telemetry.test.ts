@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { alerts, muteOperations, reconciliationRuns } from "@/db/schema";
+import { alerts, combinationEvaluatorHeartbeat, combinations, muteOperations, reconciliationRuns } from "@/db/schema";
 import { renderPrometheus, PREFIX } from "@/lib/metrics";
 import { createTestDb } from "@/test/db";
 import type { Db } from "./db-types";
@@ -33,6 +33,21 @@ describe("readTelemetry", () => {
     expect(t.pendingMutes).toEqual({ count: 0, oldestAt: null });
     expect(t.lastReconciliation).toBeNull();
     expect(t.recentRemediations).toEqual({ total: 0, failed: 0, skipped: 0 });
+    expect(t.combinationsByState).toEqual({ ok: 0, pending: 0, alert: 0 });
+    expect(t.combinationEvaluatorLastRunAt).toBeNull();
+  });
+
+  it("conta as combinações não arquivadas por estado e lê o heartbeat do avaliador", async () => {
+    await db.insert(combinations).values([
+      { name: "t-alert", rule: "or", state: "alert" },
+      { name: "t-pending", rule: "or", state: "pending" },
+      { name: "t-ok", rule: "or" },
+      { name: "t-arquivada", rule: "or", state: "alert", archivedAt: new Date() },
+    ]);
+    await db.insert(combinationEvaluatorHeartbeat).values({ lastRunAt: new Date("2026-03-01T10:09:30Z") });
+    const t = await readTelemetry(db, { providers });
+    expect(t.combinationsByState).toEqual({ ok: 1, pending: 1, alert: 1 });
+    expect(t.combinationEvaluatorLastRunAt).toEqual(new Date("2026-03-01T10:09:30Z"));
   });
 
   it("conta alertas por estado, o último evento por fonte, silêncios pendentes e a última reconciliação", async () => {
@@ -77,6 +92,9 @@ describe("toGauges", () => {
     expect(text).toContain(`${PREFIX}mute_operations_oldest_pending_seconds 2400`);
     expect(text).toContain(`${PREFIX}database_pool_connections{state="waiting"} 1`);
     expect(text).toMatch(new RegExp(`${PREFIX}database_latency_seconds `));
+    expect(text).toContain(`${PREFIX}combinations{state="alert"} 1`);
+    expect(text).toContain(`${PREFIX}combinations{state="pending"} 1`);
+    expect(text).toContain(`${PREFIX}combination_evaluator_last_run_timestamp_seconds ${Math.floor(Date.parse("2026-03-01T10:09:30Z") / 1000)}`);
   });
 
   it("com o banco fora não inventa latência nem pool", async () => {
@@ -84,6 +102,8 @@ describe("toGauges", () => {
     const text = renderPrometheus(toGauges(t, info));
     expect(text).toContain(`${PREFIX}database_up 0`);
     expect(text).toContain(`${PREFIX}webhook_enabled 0`);
+    expect(text).toContain(`${PREFIX}combination_evaluator_last_run_timestamp_seconds 0`);
+    expect(text).toContain(`${PREFIX}combinations{state="alert"} 0`);
     expect(text).not.toContain("database_latency_seconds ");
     expect(text).not.toContain("database_pool_connections{");
   });

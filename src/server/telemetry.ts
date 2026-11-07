@@ -1,6 +1,7 @@
 import { desc, count, eq, isNull, max, min, sql } from "drizzle-orm";
-import { alerts, muteOperations, reconciliationRuns, remediationRuns } from "@/db/schema";
+import { alerts, combinationEvaluatorHeartbeat, combinations, muteOperations, reconciliationRuns, remediationRuns } from "@/db/schema";
 import { ALERT_STATES } from "@/domain/alert-machine";
+import { COMBINATION_STATES } from "@/domain/combination";
 import type { Gauge } from "@/lib/metrics";
 import { PROVIDER_IDS } from "@/providers/catalog";
 import type { Db } from "./db-types";
@@ -23,6 +24,10 @@ export type Telemetry = {
   pendingMutes: { count: number; oldestAt: Date | null };
   lastReconciliation: { id: number; provider: string; status: string; startedAt: Date; finishedAt: Date | null; dryRun: boolean } | null;
   recentRemediations: { total: number; failed: number; skipped: number };
+  /** Combinações não arquivadas por estado. */
+  combinationsByState: Record<string, number>;
+  /** Fim do último ciclo do avaliador periódico (nulo = nunca rodou). */
+  combinationEvaluatorLastRunAt: Date | null;
 };
 
 const RECENT_REMEDIATIONS = 50;
@@ -37,13 +42,15 @@ export async function readTelemetry(db: Db | undefined, options: { providers: Pr
     pendingMutes: { count: 0, oldestAt: null },
     lastReconciliation: null,
     recentRemediations: { total: 0, failed: 0, skipped: 0 },
+    combinationsByState: Object.fromEntries(COMBINATION_STATES.map((s) => [s, 0])),
+    combinationEvaluatorLastRunAt: null,
   };
   if (!db) return empty;
   const started = performance.now();
   try {
     await db.execute(sql`select 1`);
     const latencyMs = Math.round(performance.now() - started);
-    const [byState, lastEvents, pending, [lastRun], recent] = await Promise.all([
+    const [byState, lastEvents, pending, [lastRun], recent, comboStates, [heartbeat]] = await Promise.all([
       db.select({ state: alerts.state, n: count() }).from(alerts).where(isNull(alerts.archivedAt)).groupBy(alerts.state),
       db.select({ provider: alerts.provider, at: max(alerts.lastEventAt) }).from(alerts).groupBy(alerts.provider),
       db.select({ n: count(), oldest: min(muteOperations.createdAt) }).from(muteOperations).where(eq(muteOperations.status, "pending")),
@@ -54,6 +61,8 @@ export async function readTelemetry(db: Db | undefined, options: { providers: Pr
         .limit(1),
       // As últimas N execuções pela chave primária: barato mesmo com a tabela grande.
       db.select({ status: remediationRuns.status }).from(remediationRuns).orderBy(desc(remediationRuns.id)).limit(RECENT_REMEDIATIONS),
+      db.select({ state: combinations.state, n: count() }).from(combinations).where(isNull(combinations.archivedAt)).groupBy(combinations.state),
+      db.select({ at: combinationEvaluatorHeartbeat.lastRunAt }).from(combinationEvaluatorHeartbeat).limit(1),
     ]);
     const lastAt = new Map(lastEvents.map((row) => [row.provider, row.at]));
     return {
@@ -63,6 +72,8 @@ export async function readTelemetry(db: Db | undefined, options: { providers: Pr
       providers: empty.providers.map((p) => ({ ...p, lastEventAt: lastAt.get(p.id) ?? null })),
       pendingMutes: { count: pending[0]?.n ?? 0, oldestAt: pending[0]?.oldest ?? null },
       lastReconciliation: lastRun ?? null,
+      combinationsByState: { ...empty.combinationsByState, ...Object.fromEntries(comboStates.map((row) => [row.state, row.n])) },
+      combinationEvaluatorLastRunAt: heartbeat?.at ?? null,
       recentRemediations: { total: recent.length, failed: recent.filter((r) => r.status === "failed").length, skipped: recent.filter((r) => r.status === "skipped").length },
     };
   } catch {
@@ -95,6 +106,16 @@ export function toGauges(t: Telemetry, info: { version: string; startedAt: Date;
       name: "reconciliation_last_run_timestamp_seconds",
       help: "Início da última reconciliação (0 = nunca).",
       samples: [{ value: t.lastReconciliation ? Math.floor(t.lastReconciliation.startedAt.getTime() / 1000) : 0 }],
+    },
+    {
+      name: "combinations",
+      help: "Combinações ativas por estado.",
+      samples: Object.entries(t.combinationsByState).map(([state, value]) => ({ labels: { state }, value })),
+    },
+    {
+      name: "combination_evaluator_last_run_timestamp_seconds",
+      help: "Fim do último ciclo do avaliador de combinações (0 = nunca). Sem ele a duração das combinações não completa.",
+      samples: [{ value: t.combinationEvaluatorLastRunAt ? Math.floor(t.combinationEvaluatorLastRunAt.getTime() / 1000) : 0 }],
     },
     { name: "remediation_recent_failed", help: `Falhas entre as últimas ${RECENT_REMEDIATIONS} remediações.`, samples: [{ value: t.recentRemediations.failed }] },
   ];
