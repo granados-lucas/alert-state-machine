@@ -162,3 +162,23 @@ A pedido do solicitante: o `ADMIN_API_TOKEN` saiu (API, formulários, simulador,
 | Observabilidade (`/api/metrics`, `/api/health/live`, `/status`, `X-Request-Id`) | Validada com a stack Docker | Métricas lidas após o simulador (webhooks por fonte e resultado, silêncios, chamadas à API, reconciliações, remediações); formato **não** consumido por um Prometheus real |
 | `pnpm check` | Validado | 240 testes (cobertura 97,3% stmts, 94,4% branches, 97,6% funções, 97,9% linhas), 17 do simulador, 5 do script |
 | Simulador ponta a ponta (base zerada) | Validado | 0 divergências: 200 alertas, 96 remediações, silêncio, reconciliação e cenário multifonte (9 alertas de 3 fontes) |
+
+
+## Fase 9 — combinações de alertas (2026-11-06)
+
+Desenho e plano: `docs/superpowers/specs/2026-11-06-combinacoes-de-alertas-design.md` e `docs/superpowers/plans/2026-11-06-combinacoes-de-alertas.md`. Pedido do solicitante: combinar 1 ou mais alertas (E, OU, pelo menos N, com duração) para disparar automações mais precisas, num menu próprio que não altera o mapa de jornadas nem a saúde; edição e desativação de automações também na tela.
+
+| Item | Estado | Evidência |
+|---|---|---|
+| Regra, duração e estados (`ok`, `pending`, `alert`) | Validado | Testes de unidade da regra e da transição; testes de integração do avaliador com relógio injetado (duração, contagem que zera, silenciado, arquivado, concorrência no PGlite) |
+| Migração 0008 | Validada em PostgreSQL 17 real **sobre dados existentes** | `docker compose up --build` aplicou a migração sobre o volume do banco com os dados do modo demonstração. O teste de esquema achou um erro real: o `CHECK` de `min_count` aceitava `at_least` sem N (comparação com NULL dá "desconhecido"); corrigido e coberto |
+| Concorrência (trava de linha) | Validada em PostgreSQL 17 real | 10 chamadas simultâneas de `POST /api/combinations/evaluate` sobre uma combinação `pending` vencida: **1** transição, **1** linha de auditoria, **1** execução da automação (o PGlite não prova isso: usa uma só conexão) |
+| Avaliador periódico (`combination-evaluator`, 30 s) | Validado com a stack Docker | O serviço sobe por padrão, registra `avaliadas N, mudaram M`, e `global_alerts_combination_evaluator_last_run_timestamp_seconds` avança |
+| Ligação com a ingestão, a reconciliação e o silêncio | Validada | Testes: evento que muda o estado avalia logo depois do commit; evento repetido/antigo não; falha do avaliador não derruba o evento. Cenário do simulador contra a stack: `combination scenario: ok (2 automation calls)` (pending, alert com automação, normalização com automação, alerta que cai antes da duração não dispara) |
+| API e automações (criar, editar qualquer campo, ativar/desativar) | Validada | Testes de rota e de serviço (inclusive segurança herdada: cabeçalho secreto literal, URL com credenciais, host fora da lista) |
+| Telas (`/combinations`, detalhe, nova, editar) | Validada num navegador real contra a stack Docker | Fluxo automatizado: desativar, editar (nome, URL, timeout), reativar, erro de validação exibido, criar combinação pelo formulário (3 min, 1 alerta, redirecionou para o detalhe); sem rolagem horizontal a 390 px nas 5 telas |
+| Métricas e `/status` | Validadas com a stack Docker | `combinations{state}`, `combination_transitions_total`, `combination_automation_runs_total` e o timestamp do avaliador lidos em `/api/metrics` |
+| `pnpm check` | Validado | 338 testes (cobertura 97,1% linhas, 94,1% ramos), 21 do simulador, 10 dos scripts; lint, lint:typed, tipos e build |
+| Simulador ponta a ponta | Validado sobre a base com dados (não zerada) | 0 divergências: 200 alertas, 96 remediações, silêncio, reconciliação, cenário multifonte e cenário de combinações. A verificação em nível de aplicação é pulada quando a base já tinha dados |
+
+**Não validado:** a automação chamando uma ferramenta real da empresa (só o receptor do simulador e hosts inexistentes); o efeito de mais de uma instância da aplicação com mais de um avaliador (a trava de linha foi provada com chamadas concorrentes numa instância); combinações sobre alertas das ferramentas reais (Datadog, CloudWatch, AppDynamics), que continuam nunca testadas com o sistema real. Limites conhecidos: sem atraso na volta ao normal (oscilação dispara várias vezes); automação executada depois da resposta pode se perder se o processo cair; arquivar um alerta e o fim de um silêncio só são percebidos no ciclo periódico (~30 s).
