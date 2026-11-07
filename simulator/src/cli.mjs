@@ -8,6 +8,7 @@ import { startReceiver } from "./receiver.mjs";
 import { createRng } from "./rng.mjs";
 import { reconcileScenario } from "./reconcile-scenario.mjs";
 import { CALM_WEIGHTS, churn, createJourneys, healthRound, muteScenario, seed, verify } from "./scenario.mjs";
+import { combinationScenario } from "./combinations.mjs";
 import { demoSourceAlarms, demoSourceJourney, demoSourceRound, multiSourceScenario, seedDemoSources } from "./sources.mjs";
 
 const { positionals, values } = parseArgs({
@@ -131,6 +132,7 @@ problems.push(
     secret: required("WEBHOOK_SECRET"),
   })),
 );
+problems.push(...(await combinationScenario({ client, receiver, receiverUrl: values["receiver-url"], secret: required("WEBHOOK_SECRET"), log })));
 await receiver.close();
 
 if (problems.length) {

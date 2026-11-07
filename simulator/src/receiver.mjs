@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 
 // Destino de remediação falso: registra o que a aplicação principal chama.
-// /remediate/hook (webhook padrão), /remediate/api (exige Authorization) e /remediate/flaky (sempre 503).
+// /remediate/hook (webhook padrão), /remediate/api (exige Authorization), /remediate/flaky (sempre 503) e
+// /remediate/combination (automação de uma combinação: registra o nome e o estado da combinação).
 export function startReceiver({ port, token, extraHandler }) {
   const calls = []; // { kind, monitorId, authorized }
   const server = createServer((req, res) => {
@@ -12,7 +13,7 @@ export function startReceiver({ port, token, extraHandler }) {
     if (extraHandler?.(req, res)) return;
     if (req.method === "GET" && req.url === "/health") return send(200, { ok: true });
     if (req.method === "GET" && req.url === "/calls") return send(200, calls);
-    const kind = /^\/remediate\/(hook|api|flaky)$/.exec(req.url ?? "")?.[1];
+    const kind = /^\/remediate\/(hook|api|flaky|combination)$/.exec(req.url ?? "")?.[1];
     if (req.method !== "POST" || !kind) return send(404);
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
@@ -26,7 +27,8 @@ export function startReceiver({ port, token, extraHandler }) {
       const name = typeof body.alert === "string" ? body.alert : body.alert?.name;
       const monitorId = /#(\d+)$/.exec(name ?? "")?.[1] ?? null;
       const authorized = kind !== "api" || req.headers.authorization === token;
-      calls.push({ kind, monitorId, authorized });
+      const combination = body.combination ? { name: body.combination.name, state: body.combination.state } : null;
+      calls.push({ kind, monitorId, authorized, ...(combination ? { combination } : {}) });
       if (!authorized) return send(401);
       send(kind === "flaky" ? 503 : 200, { received: true });
     });

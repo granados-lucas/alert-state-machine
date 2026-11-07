@@ -252,3 +252,68 @@ test("demonstração: as outras fontes semeiam em ok e depois degradam e se recu
   assert.equal(await demoSourceRound({ client, secret: "s3cret-s3cret-s3cret", alarms, rng: always }), 2); // 1 recupera e 1 degrada
   assert.equal(new Set(sent.map((s) => s.body.event_id ?? s.body.MessageId)).size, sent.length); // ids de evento únicos
 });
+
+// ---- Cenário de combinações: um cliente falso imita as regras da aplicação para provar que o oráculo
+// do cenário aceita o comportamento correto e acusa os dois defeitos que importam (não disparar / disparar sem a duração).
+function fakeCombinationApp({ neverFires = false, ignoresDuration = false } = {}) {
+  const alerts = new Map();
+  const calls = [];
+  let combo = null;
+  let ids = 0;
+  const bothAlert = () => combo.alertIds.every((id) => alerts.get(id) === "alert");
+  const move = (state) => {
+    if (combo.state === state) return;
+    const previous = combo.state;
+    combo.state = state;
+    const fires = state === "alert" || (state === "ok" && previous === "alert");
+    if (fires && !neverFires) calls.push({ kind: "combination", authorized: true, combination: { name: combo.name, state } });
+  };
+  const reevaluate = (evaluatingAfterDuration) => {
+    if (!combo) return;
+    if (!bothAlert()) return move("ok");
+    if (combo.state === "ok") return move(ignoresDuration ? "alert" : "pending");
+    if (combo.state === "pending" && evaluatingAfterDuration) move("alert");
+  };
+  const byExternal = new Map();
+  const client = {
+    sendTo: async (body) => {
+      const payload = JSON.parse(body);
+      const key = payload.monitor_id ?? `${payload.application}/${payload.health_rule}`;
+      if (!byExternal.has(key)) byExternal.set(key, ++ids);
+      const alertId = byExternal.get(key);
+      const state = payload.state ?? (payload.event_type === "POLICY_OPEN_CRITICAL" ? "alert" : payload.event_type === "POLICY_OPEN_WARNING" ? "warn" : "ok");
+      alerts.set(alertId, state);
+      reevaluate(false);
+      return { status: 200, json: { status: "applied", alertId, state } };
+    },
+    createCombination: async (input) => {
+      combo = { id: 1, name: input.name, alertIds: input.alertIds, state: "ok" };
+      return { status: 201, json: { id: 1 } };
+    },
+    combination: async () => ({ status: 200, json: { state: combo.state } }),
+    evaluateCombinations: async () => (reevaluate(true), { status: 200, json: {} }),
+  };
+  return { client, receiver: { calls } };
+}
+
+test("cenário de combinações: aceita o comportamento correto (pending, alert, ok e cancelamento antes da duração)", async () => {
+  const { combinationScenario } = await import("../src/combinations.mjs");
+  const { client, receiver } = fakeCombinationApp();
+  const problems = await combinationScenario({ client, receiver, receiverUrl: "http://r:9100", secret: "s3cret-s3cret-s3cret", log: () => {}, sleepFn: async () => {}, durationSeconds: 1 });
+  assert.deepEqual(problems, []);
+  assert.deepEqual(receiver.calls.map((c) => c.combination.state), ["alert", "ok"]);
+});
+
+test("cenário de combinações: acusa uma aplicação que nunca dispara a automação", async () => {
+  const { combinationScenario } = await import("../src/combinations.mjs");
+  const { client, receiver } = fakeCombinationApp({ neverFires: true });
+  const problems = await combinationScenario({ client, receiver, receiverUrl: "http://r:9100", secret: "s3cret-s3cret-s3cret", log: () => {}, sleepFn: async () => {}, durationSeconds: 1, waitMs: 20 });
+  assert.ok(problems.some((p) => /automation/.test(p)), problems.join("\n"));
+});
+
+test("cenário de combinações: acusa uma aplicação que ignora a duração", async () => {
+  const { combinationScenario } = await import("../src/combinations.mjs");
+  const { client, receiver } = fakeCombinationApp({ ignoresDuration: true });
+  const problems = await combinationScenario({ client, receiver, receiverUrl: "http://r:9100", secret: "s3cret-s3cret-s3cret", log: () => {}, sleepFn: async () => {}, durationSeconds: 1, waitMs: 20 });
+  assert.ok(problems.some((p) => /pending/.test(p)), problems.join("\n"));
+});
