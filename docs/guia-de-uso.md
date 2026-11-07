@@ -308,7 +308,7 @@ A combinação **não altera** o mapa de jornadas nem o índice de saúde (para 
 3. Escolha a regra (e o N, se for "Pelo menos N") e a duração em minutos.
 4. Opcional: marque **Acionar uma ferramenta** para cadastrar já uma automação (veja 10.4).
 
-Em **Editar** você muda nome, descrição, regra, duração e a lista de alertas. Salvar **reavalia a combinação na hora** com a regra nova, e a alteração (antes e depois) fica na auditoria. **Arquivar** tira a combinação do mapa, mas guarda o histórico (dá para restaurar).
+Em **Editar** você muda nome, descrição, regra, duração e a lista de alertas. Salvar **reavalia a combinação na hora** com a regra nova, e a alteração (antes e depois) fica na auditoria. **Arquivar** tira a combinação do mapa, mas guarda o histórico (dá para restaurar). Arquivar uma combinação que está em Alerta a **volta ao Normal sem disparar a automação**; ao restaurar, ela é reavaliada do zero (se a regra valer de novo, é um novo incidente e a automação dispara). Uma combinação com um alerta componente arquivado continua editável: só os alertas **adicionados** na edição precisam estar ativos.
 
 ### 10.4 Automação: o que acontece quando a combinação muda
 
