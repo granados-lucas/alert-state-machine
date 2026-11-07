@@ -4,7 +4,7 @@ import { auditLog, remediationRuns } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { createAlert } from "./alerts";
 import type { Db } from "./db-types";
-import { isAllowedDestination, remediationInputSchema, renderTemplate, resolveHeaders, runRemediations, type PendingRemediation } from "./remediation";
+import { isAllowedDestination, remediationInputSchema, renderTemplate, renderVars, resolveHeaders, runRemediations, type PendingRemediation } from "./remediation";
 import { addRemediation } from "./alerts";
 
 let db: Db;
@@ -57,6 +57,11 @@ describe("helpers", () => {
     const ctx = { id: 7, name: 'say "hi"\n', application: "a", state: "alert" as const, previousState: null, priority: null, tags: ["x", "y"], link: null };
     const out = renderTemplate('{"n":"{{alert.name}}","s":"{{alert.state}}","t":"{{alert.tags}}","u":"{{alert.nope}}"}', ctx);
     expect(JSON.parse(out)).toEqual({ n: 'say "hi"\n', s: "alert", t: "x,y", u: "" });
+  });
+
+  it("renderVars escapa valores para JSON e troca chave inexistente por texto vazio", () => {
+    const out = renderVars('{"n":"{{combination.name}}","x":"{{combination.nope}}"}', { "combination.name": 'a "b"\nc' });
+    expect(JSON.parse(out)).toEqual({ n: 'a "b"\nc', x: "" });
   });
 });
 

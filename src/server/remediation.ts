@@ -72,27 +72,35 @@ export function resolveHeaders(headers: Record<string, string>, env: Record<stri
 
 const escapeJson = (value: unknown) => JSON.stringify(String(value ?? "")).slice(1, -1);
 
-/** Substitui {{alert.campo}} por valores escapados para JSON (o autor do modelo escreve as aspas). */
-export function renderTemplate(template: string, ctx: AlertContext) {
-  const values: Record<string, unknown> = {
-    "alert.id": ctx.id,
-    "alert.name": ctx.name,
-    "alert.application": ctx.application,
-    "alert.state": ctx.state,
-    "alert.previous_state": ctx.previousState,
-    "alert.priority": ctx.priority,
-    "alert.link": ctx.link,
-    "alert.tags": ctx.tags.join(","),
-  };
-  return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => escapeJson(values[key]));
+/** Substitui {{chave}} por valores escapados para JSON (o autor do modelo escreve as aspas). */
+export function renderVars(template: string, vars: Record<string, unknown>) {
+  return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) => escapeJson(vars[key]));
 }
 
-function buildRequest(remediation: Remediation, ctx: AlertContext) {
-  const hasBody = remediation.method !== "GET" && remediation.method !== "DELETE";
-  if (!hasBody) return { body: undefined };
-  if (remediation.mode === "api" && remediation.bodyTemplate) return { body: renderTemplate(remediation.bodyTemplate, ctx) };
+const alertVars = (ctx: AlertContext): Record<string, unknown> => ({
+  "alert.id": ctx.id,
+  "alert.name": ctx.name,
+  "alert.application": ctx.application,
+  "alert.state": ctx.state,
+  "alert.previous_state": ctx.previousState,
+  "alert.priority": ctx.priority,
+  "alert.link": ctx.link,
+  "alert.tags": ctx.tags.join(","),
+});
+
+/** Substitui {{alert.campo}} pelos dados do alerta. */
+export function renderTemplate(template: string, ctx: AlertContext) {
+  return renderVars(template, alertVars(ctx));
+}
+
+/** O que a chamada de saída leva: variáveis do modelo de corpo e o corpo padrão (JSON). */
+export type RequestSpec = { vars: Record<string, unknown>; payload: unknown };
+export type OutboundTarget = Pick<Remediation, "url" | "method" | "mode" | "bodyTemplate" | "headers" | "timeoutMs">;
+
+function alertSpec(ctx: AlertContext): RequestSpec {
   return {
-    body: JSON.stringify({
+    vars: alertVars(ctx),
+    payload: {
       source: "global-alerts",
       alert: {
         id: ctx.id,
@@ -105,8 +113,15 @@ function buildRequest(remediation: Remediation, ctx: AlertContext) {
         link: ctx.link,
       },
       firedAt: new Date().toISOString(),
-    }),
+    },
   };
+}
+
+function buildRequest(target: OutboundTarget, spec: RequestSpec) {
+  const hasBody = target.method !== "GET" && target.method !== "DELETE";
+  if (!hasBody) return { body: undefined };
+  if (target.mode === "api" && target.bodyTemplate) return { body: renderVars(target.bodyTemplate, spec.vars) };
+  return { body: JSON.stringify(spec.payload) };
 }
 
 export type RemediationDeps = {
@@ -115,16 +130,16 @@ export type RemediationDeps = {
   env: Record<string, string | undefined>;
 };
 
-type Outcome = { status: "success" | "failed" | "skipped"; httpStatus: number | null; durationMs: number | null; error: string | null };
+export type Outcome = { status: "success" | "failed" | "skipped"; httpStatus: number | null; durationMs: number | null; error: string | null };
 
-async function execute(remediation: Remediation, ctx: AlertContext, deps: RemediationDeps): Promise<Outcome> {
+export async function execute(remediation: OutboundTarget, spec: RequestSpec, deps: RemediationDeps): Promise<Outcome> {
   const url = new URL(remediation.url);
   if (!isAllowedDestination(url, deps.allowedHosts)) {
     return { status: "skipped", httpStatus: null, durationMs: null, error: "destination not in REMEDIATION_ALLOWED_HOSTS" };
   }
   const started = Date.now();
   try {
-    const { body } = buildRequest(remediation, ctx);
+    const { body } = buildRequest(remediation, spec);
     const response = await deps.fetch(url, {
       method: remediation.method,
       headers: { ...(body ? { "content-type": "application/json" } : {}), ...resolveHeaders(remediation.headers, deps.env) },
@@ -155,7 +170,7 @@ const MAX_QUEUED = 500;
 let inFlight = 0;
 const waiters: (() => void)[] = [];
 
-async function withSlot<T>(task: () => Promise<T>): Promise<T | "queue-full"> {
+export async function withSlot<T>(task: () => Promise<T>): Promise<T | "queue-full"> {
   if (inFlight >= MAX_IN_FLIGHT) {
     if (waiters.length >= MAX_QUEUED) return "queue-full";
     await new Promise<void>((resolve) => waiters.push(resolve)); // o slot é repassado por quem termina
@@ -184,7 +199,7 @@ async function runOne(db: Db, item: PendingRemediation, deps: RemediationDeps) {
     .where(eq(alerts.id, item.remediation.alertId));
   if (!row) return;
   const ctx: AlertContext = { ...row, state: item.state, previousState: item.previousState };
-  const result = await withSlot(() => execute(item.remediation, ctx, deps));
+  const result = await withSlot(() => execute(item.remediation, alertSpec(ctx), deps));
   const outcome: Outcome =
     result === "queue-full" ? { status: "skipped", httpStatus: null, durationMs: null, error: "remediation queue full" } : result;
   increment("remediation_runs_total", { status: outcome.status });
