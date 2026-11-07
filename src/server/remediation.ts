@@ -17,26 +17,30 @@ const headersSchema = z.record(z.string().regex(/^[A-Za-z0-9-]+$/), z.string().m
   }
 });
 
+// Campos e regra compartilhados com as automações de combinação (só os gatilhos mudam).
+export const outboundShape = {
+  name: z.string().trim().min(1).max(100),
+  mode: z.enum(["webhook", "api"]),
+  url: z
+    .url({ protocol: /^https?$/ })
+    .refine((value) => {
+      const u = new URL(value);
+      return !u.username && !u.password;
+    }, "credentials in URL are not allowed"),
+  method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
+  headers: headersSchema.default({}),
+  bodyTemplate: z.string().max(4000).nullish(),
+  timeoutMs: z.number().int().min(100).max(15_000).default(5000),
+  enabled: z.boolean().default(true),
+};
+export const webhookModeRule = {
+  check: (v: { mode: string; method: string; bodyTemplate?: string | null }) => v.mode === "api" || (v.method === "POST" && !v.bodyTemplate),
+  message: "mode webhook always sends POST with the standard payload",
+};
+
 export const remediationInputSchema = z
-  .object({
-    name: z.string().trim().min(1).max(100),
-    mode: z.enum(["webhook", "api"]),
-    url: z
-      .url({ protocol: /^https?$/ })
-      .refine((value) => {
-        const u = new URL(value);
-        return !u.username && !u.password;
-      }, "credentials in URL are not allowed"),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
-    headers: headersSchema.default({}),
-    bodyTemplate: z.string().max(4000).nullish(),
-    triggerStates: z.array(z.enum(ALERT_STATES)).min(1).default(["alert"]),
-    timeoutMs: z.number().int().min(100).max(15_000).default(5000),
-    enabled: z.boolean().default(true),
-  })
-  .refine((v) => v.mode === "api" || (v.method === "POST" && !v.bodyTemplate), {
-    message: "mode webhook always sends POST with the standard payload",
-  });
+  .object({ ...outboundShape, triggerStates: z.array(z.enum(ALERT_STATES)).min(1).default(["alert"]) })
+  .refine(webhookModeRule.check, { message: webhookModeRule.message });
 
 export type PendingRemediation = { remediation: Remediation; state: AlertState; previousState: AlertState | null; eventId: number | null };
 
