@@ -8,7 +8,7 @@ import { increment, observe } from "@/lib/metrics";
 import { errorResponse, json, readJson } from "@/server/http";
 import { ingestEvent } from "@/server/ingest";
 import { runRemediations } from "@/server/remediation";
-import { database, remediationDeps, runAfterResponse } from "@/server/runtime";
+import { database, remediationDeps, runAfterResponse, runAutomationsAfterResponse } from "@/server/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +64,7 @@ async function handle(request: Request, log: typeof logger, source: { id: string
     if (result.pending.length > 0) {
       runAfterResponse(() => runRemediations(db, result.pending, remediationDeps()));
     }
+    runAutomationsAfterResponse(db, result.combinations);
     log.info({ source: id, alertId: result.alertId, outcome: result.outcome, to: result.to }, "Webhook processed");
     return [json({ status: result.outcome, alertId: result.alertId, state: result.to }), result.outcome];
   } catch (error) {

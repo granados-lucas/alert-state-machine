@@ -1,7 +1,10 @@
 import { and, eq } from "drizzle-orm";
 import { alerts, applications, auditLog, webhookEvents } from "@/db/schema";
 import { transition, type AlertState } from "@/domain/alert-machine";
+import { increment } from "@/lib/metrics";
 import type { NormalizedEvent } from "@/providers/types";
+import { evaluateCombinations } from "./combination-evaluator";
+import type { PendingAutomation } from "./combination-automations";
 import type { Db, Tx } from "./db-types";
 import { findTriggered, type PendingRemediation } from "./remediation";
 
@@ -14,6 +17,8 @@ export type IngestResult =
       from: AlertState;
       to: AlertState;
       pending: PendingRemediation[];
+      /** Automações de combinações que mudaram por causa deste evento (executar depois da resposta). */
+      combinations: PendingAutomation[];
     };
 
 async function upsertApplication(tx: Tx, name: string) {
@@ -30,7 +35,23 @@ async function upsertApplication(tx: Tx, name: string) {
  * alerta (SELECT ... FOR UPDATE), então entregas repetidas ou concorrentes não duplicam transições.
  */
 export async function ingestEvent(db: Db, event: NormalizedEvent, options: { actor?: string } = {}): Promise<IngestResult> {
-  const actor = options.actor ?? `system:${event.provider}`;
+  const result = await applyEvent(db, event, options.actor ?? `system:${event.provider}`);
+  if (result.status !== "processed" || result.outcome !== "applied") return result;
+  return { ...result, combinations: await evaluateAfterCommit(db, result.alertId) };
+}
+
+// O evento já está gravado: uma falha aqui não pode virar erro para a fonte (ela reenviaria um duplicado).
+// O avaliador periódico recupera o que ficou para trás.
+async function evaluateAfterCommit(db: Db, alertId: number) {
+  try {
+    return (await evaluateCombinations(db, { alertId })).pending;
+  } catch {
+    increment("combination_evaluation_errors_total");
+    return [];
+  }
+}
+
+async function applyEvent(db: Db, event: NormalizedEvent, actor: string): Promise<IngestResult> {
   return db.transaction(async (tx) => {
     // 1. Registro do evento: o conflito é a checagem de idempotência.
     const [stored] = await tx
@@ -134,6 +155,6 @@ export async function ingestEvent(db: Db, event: NormalizedEvent, options: { act
             eventId: stored.id,
           }))
         : [];
-    return { status: "processed", outcome, alertId: alert.id, from: alert.state, to, pending } as const;
+    return { status: "processed", outcome, alertId: alert.id, from: alert.state, to, pending, combinations: [] } as const;
   });
 }

@@ -8,6 +8,7 @@ import type { Db } from "./db-types";
 import { ConflictError, NotConfiguredError, NotFoundError, UnsupportedError } from "./errors";
 import { ingestEvent } from "./ingest";
 import { executeReconciliation, getReconciliationRun, listReconciliationRuns, reconcile, reconcileOptionsSchema, startReconciliation } from "./reconcile";
+import { createCombination, createCombinationSchema } from "./combinations";
 import { remediationInputSchema } from "./remediation";
 
 let db: Db;
@@ -280,5 +281,36 @@ describe("início e consulta", () => {
     const list = await listReconciliationRuns(db, 3);
     expect(list.length).toBeLessThanOrEqual(3);
     expect(list[0].id).toBeGreaterThanOrEqual(list[list.length - 1].id);
+  });
+});
+
+describe("reconcile e combinações", () => {
+  const comboOver = async (alertId: number) =>
+    (
+      await createCombination(
+        db,
+        createCombinationSchema.parse({ name: `rec-${alertId}`, rule: "and", alertIds: [alertId], automations: [{ name: "a", mode: "webhook", url: "http://hooks.test/x" }] }),
+        "ana",
+      )
+    ).combination;
+
+  it("executa a automação da combinação cujo componente foi corrigido", async () => {
+    const a = await seed("ok");
+    const combo = await comboOver(a.id);
+    const { provider: p } = provider([[mon(a.externalId, "Alert")]]);
+    const runAutomations = vi.fn().mockResolvedValue(undefined);
+    await reconcile(db, opts(), "ana", "manual", deps(p, { runAutomations }));
+    expect(runAutomations).toHaveBeenCalledOnce();
+    expect(runAutomations.mock.calls[0][0]).toHaveLength(1);
+    expect(runAutomations.mock.calls[0][0][0]).toMatchObject({ combinationId: combo.id, state: "alert" });
+  });
+
+  it("com remediate: false não executa as automações", async () => {
+    const a = await seed("ok");
+    await comboOver(a.id);
+    const { provider: p } = provider([[mon(a.externalId, "Alert")]]);
+    const runAutomations = vi.fn().mockResolvedValue(undefined);
+    await reconcile(db, opts({ remediate: false }), "ana", "manual", deps(p, { runAutomations }));
+    expect(runAutomations).not.toHaveBeenCalled();
   });
 });

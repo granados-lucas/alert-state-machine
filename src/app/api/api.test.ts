@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { alerts, muteOperations, remediationRuns } from "@/db/schema";
+import { alerts, combinationAutomationRuns, muteOperations, remediationRuns } from "@/db/schema";
 import { createTestDb } from "@/test/db";
+import { createCombination, createCombinationSchema } from "@/server/combinations";
 import type { Db } from "@/server/db-types";
 
 let db: Db;
@@ -105,6 +106,31 @@ describe("POST /api/webhooks (webhook único)", () => {
       expect(await db.select().from(remediationRuns).where(eq(remediationRuns.alertId, id))).toHaveLength(1);
     });
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("dispara a automação da combinação depois da resposta quando o webhook fecha a regra", async () => {
+    const first = await sendWebhook(dd({ monitor_id: "930", transition: "Recovered", alert_type: "success", tags: "service:combos" }));
+    const { alertId } = await first.json();
+    const { combination } = await createCombination(
+      db,
+      createCombinationSchema.parse({
+        name: "api-combo",
+        rule: "and",
+        alertIds: [alertId],
+        automations: [{ name: "a", mode: "webhook", url: "http://hooks.test/combo" }],
+      }),
+      "ana",
+    );
+    expect(combination.state).toBe("ok");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await sendWebhook(dd({ monitor_id: "930", tags: "service:combos" }));
+    expect(await res.json()).toMatchObject({ status: "applied", state: "alert" });
+    await vi.waitFor(async () => {
+      expect(await db.select().from(combinationAutomationRuns).where(eq(combinationAutomationRuns.combinationId, combination.id))).toHaveLength(1);
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toMatchObject({ combination: { name: "api-combo", state: "alert" } });
   });
 
   it("responde 500 sem detalhes quando o banco falha (o provedor reenvia)", async () => {

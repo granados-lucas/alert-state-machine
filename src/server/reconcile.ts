@@ -7,6 +7,7 @@ import { ProviderRateLimitError, type AlertProvider, type NormalizedEvent, type 
 import type { Db } from "./db-types";
 import { ConflictError, isUniqueViolation, NotConfiguredError, NotFoundError, UnsupportedError } from "./errors";
 import { ingestEvent } from "./ingest";
+import type { PendingAutomation } from "./combination-automations";
 import type { PendingRemediation } from "./remediation";
 
 export const reconcileOptionsSchema = z.object({
@@ -30,6 +31,7 @@ export type ReconcileDeps = {
   sleep?: (ms: number) => Promise<void>;
   now?: () => Date;
   runRemediations?: (pending: PendingRemediation[]) => Promise<void>;
+  runAutomations?: (pending: PendingAutomation[]) => Promise<void>;
   /** Reexecuta operações de silêncio que ficaram pendentes (queda entre o provedor e o banco). */
   recoverMutes?: () => Promise<{ found: number; succeeded: number; failed: number; errors: number }>;
   maxDurationMs?: number;
@@ -135,8 +137,9 @@ export async function executeReconciliation(db: Db, runId: number, input: Reconc
       rateLimit = result.rateLimit;
       summary.pages += 1;
 
-      const pending = await processPage(db, runId, input, provider.id, result.monitors, seen, fetchedAt, summary, addDetail, actor);
+      const { pending, automations } = await processPage(db, runId, input, provider.id, result.monitors, seen, fetchedAt, summary, addDetail, actor);
       if (pending.length && input.remediate && deps.runRemediations) await deps.runRemediations(pending);
+      if (automations.length && input.remediate && deps.runAutomations) await deps.runAutomations(automations);
 
       if (result.monitors.length < input.pageSize) {
         complete = true;
@@ -195,11 +198,11 @@ async function processPage(
   summary: ReturnType<typeof emptySummary>,
   addDetail: (d: Detail) => void,
   actor: string,
-): Promise<PendingRemediation[]> {
+): Promise<{ pending: PendingRemediation[]; automations: PendingAutomation[] }> {
   const fresh = monitors.filter((m) => !seen.has(m.externalId));
   for (const m of fresh) seen.add(m.externalId);
   summary.seen += fresh.length;
-  if (fresh.length === 0) return [];
+  if (fresh.length === 0) return { pending: [], automations: [] };
 
   const rows = await db
     .select({
@@ -214,6 +217,7 @@ async function processPage(
     .where(and(eq(alerts.provider, providerId), inArray(alerts.externalId, fresh.map((m) => m.externalId))));
   const byExternal = new Map(rows.map((r) => [r.externalId, r]));
   const pending: PendingRemediation[] = [];
+  const automations: PendingAutomation[] = [];
   const recordRaw: { id: number; raw: string }[] = [];
 
   for (const m of fresh) {
@@ -266,6 +270,7 @@ async function processPage(
           summary.inSync += 1;
         }
         pending.push(...result.pending);
+        automations.push(...result.combinations);
         if (m.rawState && !input.dryRun) recordRaw.push({ id: result.alertId, raw: m.rawState });
       }
       continue;
@@ -277,7 +282,7 @@ async function processPage(
   for (const { id, raw } of recordRaw) {
     await db.update(alerts).set({ providerState: raw, providerStateAt: fetchedAt }).where(eq(alerts.id, id));
   }
-  return pending;
+  return { pending, automations };
 }
 
 /** Início + execução; devolve o registro final (usado por testes e pela rota em segundo plano). */

@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { getRemediationAllowedHosts } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { getProvider } from "@/providers";
+import { runAutomations, type PendingAutomation } from "./combination-automations";
 import { recoverMuteOperations } from "./muting";
 import type { ReconcileDeps } from "./reconcile";
 import { runRemediations, type RemediationDeps } from "./remediation";
@@ -20,6 +21,7 @@ export const remediationDeps = (): RemediationDeps => ({
 export const reconcileDeps = (db: ReturnType<typeof getDb>): ReconcileDeps => ({
   getProvider,
   runRemediations: (pending) => runRemediations(db, pending, remediationDeps()),
+  runAutomations: (pending) => runAutomations(db, pending, remediationDeps()),
   recoverMutes: () => recoverMuteOperations(db, { getProvider }),
 });
 
@@ -32,4 +34,9 @@ export function runAfterResponse(task: () => Promise<unknown>) {
   } catch {
     void guarded();
   }
+}
+
+/** Automações de combinação depois de responder; lista vazia não agenda nada. */
+export function runAutomationsAfterResponse(db: ReturnType<typeof getDb>, pending: PendingAutomation[]) {
+  if (pending.length > 0) runAfterResponse(() => runAutomations(db, pending, remediationDeps()));
 }
