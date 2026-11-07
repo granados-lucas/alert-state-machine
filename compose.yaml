@@ -67,6 +67,21 @@ services:
       retries: 20
       start_period: 5s
 
+  # Avaliador de combinações (sobe por padrão): sem ele a duração das combinações nunca completa sozinha.
+  # Roda scripts/evaluate-combinations.mjs, que chama a API da aplicação; o job não acessa banco nenhum.
+  combination-evaluator:
+    image: node:24-alpine
+    restart: unless-stopped
+    volumes:
+      - ./scripts/evaluate-combinations.mjs:/job/evaluate-combinations.mjs:ro
+    environment:
+      EVALUATE_URL: http://app:3000
+      AUTH_USER_HEADER: ${AUTH_USER_HEADER:-x-forwarded-email}
+    command: ["node", "/job/evaluate-combinations.mjs", "--every", "${EVALUATE_EVERY:-30}"]
+    depends_on:
+      app:
+        condition: service_healthy
+
   simulator:
     profiles: ["simulator"]
     build:
