@@ -7,6 +7,7 @@ import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { listProviderInfo } from "@/providers/catalog";
 import { appVersion, currentTelemetry, uptimeMinutes } from "@/server/observability";
+import { EVALUATOR_STALE_MS } from "@/server/telemetry";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Status · Global Alerts" };
@@ -21,8 +22,6 @@ function ago(value: Date | null) {
   if (seconds < 172800) return `há ${Math.round(seconds / 3600)} h`;
   return `há ${Math.round(seconds / 86400)} dias`;
 }
-
-const EVALUATOR_STALE_MS = 120_000;
 
 function evaluatorFact(t: Awaited<ReturnType<typeof currentTelemetry>>): { value: string; tone?: "ok" | "alert" } {
   const total = Object.values(t.combinationsByState).reduce((sum, n) => sum + n, 0);

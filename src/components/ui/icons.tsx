@@ -23,3 +23,4 @@ export const AlertIcon = make("M12 3a9 9 0 100 18 9 9 0 000-18zM12 8v5M12 16.5v.
 export const SyncIcon = make("M20 12a8 8 0 01-14.9 4M4 12a8 8 0 0114.9-4M19 4v4h-4M5 20v-4h4");
 export const ActivityIcon = make("M3 12h4l3-8 4 16 3-8h4");
 export const BookIcon = make("M4 19.5V5a2 2 0 012-2h13v16H6a2 2 0 00-2 2zM4 19.5A2 2 0 006 21h13M9 7h6");
+export const CombineIcon = make("M9 5a6 6 0 100 12A6 6 0 009 5zM15 7a6 6 0 100 12 6 6 0 000-12z");

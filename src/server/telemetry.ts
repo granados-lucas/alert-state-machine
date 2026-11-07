@@ -31,6 +31,8 @@ export type Telemetry = {
 };
 
 const RECENT_REMEDIATIONS = 50;
+/** Depois disso sem ciclo, o avaliador de combinações é considerado parado (o ciclo normal é de ~30 s). */
+export const EVALUATOR_STALE_MS = 120_000;
 
 export async function readTelemetry(db: Db | undefined, options: { providers: ProviderStatus[]; webhookEnabled?: boolean; pool?: PoolStats }): Promise<Telemetry> {
   const empty: Telemetry = {

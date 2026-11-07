@@ -4,13 +4,14 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { ActivityIcon, BellIcon, BookIcon, FlowIcon, LayersIcon, MapIcon, PlusIcon, SyncIcon } from "./icons";
+import { ActivityIcon, BellIcon, BookIcon, CombineIcon, FlowIcon, LayersIcon, MapIcon, PlusIcon, SyncIcon } from "./icons";
 
 const nav = [
   { href: "/", label: "Mapa de jornadas", icon: MapIcon },
   { href: "/alerts", label: "Alertas", icon: BellIcon },
   { href: "/alerts/new", label: "Novo alerta", icon: PlusIcon },
   { href: "/journeys/new", label: "Nova jornada", icon: LayersIcon },
+  { href: "/combinations", label: "Combinações", icon: CombineIcon },
   { href: "/reconciliation", label: "Reconciliação", icon: SyncIcon },
   { href: "/graph", label: "Máquina de estados", icon: FlowIcon },
   { href: "/status", label: "Status", icon: ActivityIcon },
@@ -21,6 +22,7 @@ const nav = [
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/" || pathname.startsWith("/applications") || (pathname.startsWith("/journeys/") && pathname !== "/journeys/new");
   if (href === "/alerts") return pathname === "/alerts" || (pathname.startsWith("/alerts/") && pathname !== "/alerts/new");
+  if (href === "/combinations") return pathname === "/combinations" || pathname.startsWith("/combinations/");
   if (href === "/docs") return pathname === "/docs" || pathname.startsWith("/docs/");
   return pathname === href;
 }
