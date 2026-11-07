@@ -275,7 +275,92 @@ A tela **Status** (`/status`) mostra a saúde da própria aplicação: banco, qu
 | Reconciliação "Falhou: Datadog rate limit reached (429)" | cota da API esgotada | tentar de novo mais tarde; olhe o limite visto na tela; reduza a frequência |
 | "a reconciliation is already running" | já há uma execução (ou uma travada, liberada em 30 min) | aguardar |
 
-## 10. Referências
+## 10. Combinações de alertas (sinais combinados)
+
+Um alerta sozinho diz pouco. Uma **combinação** observa de **1 a 20 alertas que já existem** e só dispara quando a regra que você escolheu vale. Isso junta, por exemplo, um alerta de comportamento de usuário (queda de conversão entre o ponto A e o ponto B) com um alerta de métrica da aplicação (latência alta no checkout): a causa e a consequência no mesmo disparo, para rodar uma automação específica para esse caso.
+
+A combinação **não altera** o mapa de jornadas nem o índice de saúde (para não contar causa e consequência em dobro). Ela tem o próprio menu: **Combinações** (`/combinations`).
+
+### 10.1 Regras
+
+| Regra | Dispara quando |
+|---|---|
+| **E** | **todos** os alertas observados estão em alerta |
+| **OU** | **pelo menos um** está em alerta |
+| **Pelo menos N** | **N ou mais** estão em alerta (N entre 1 e o número de alertas escolhidos) |
+
+- **Só o estado `alert` conta.** Aviso (`warn`), sem dados (`no_data`) e normal (`ok`) contam como "não alertando".
+- Um alerta **silenciado** ou **arquivado** também **não conta**. Com a regra E, uma combinação que tem um alerta arquivado não consegue mais disparar (a tela avisa).
+- **Duração (em minutos, opcional).** A regra precisa valer **sem interrupção** por esse tempo ("os 2 alertando por 2 minutos"). Se ela deixar de valer antes, a contagem **recomeça do zero**. Duração 0 dispara assim que a regra valer. Vale também para uma combinação de um único alerta ("este alerta por 5 minutos").
+
+### 10.2 Estados da combinação
+
+| Estado | Significa |
+|---|---|
+| **Normal** | a regra não vale |
+| **Armando** | a regra vale, mas a duração ainda não se cumpriu (a tela mostra quanto falta). Não dispara automação |
+| **Alerta** | a regra valeu pelo tempo exigido |
+
+### 10.3 Criar e editar (tela)
+
+1. Menu **Combinações** → **Nova combinação**.
+2. Dê um nome, busque os alertas pelo nome e adicione os que quer observar.
+3. Escolha a regra (e o N, se for "Pelo menos N") e a duração em minutos.
+4. Opcional: marque **Acionar uma ferramenta** para cadastrar já uma automação (veja 10.4).
+
+Em **Editar** você muda nome, descrição, regra, duração e a lista de alertas. Salvar **reavalia a combinação na hora** com a regra nova, e a alteração (antes e depois) fica na auditoria. **Arquivar** tira a combinação do mapa, mas guarda o histórico (dá para restaurar).
+
+### 10.4 Automação: o que acontece quando a combinação muda
+
+Uma automação é uma **chamada de saída** (webhook com o payload padrão, ou API com método, cabeçalhos e corpo próprios), com **as mesmas regras de segurança da remediação** (seção 6): só destinos de `REMEDIATION_ALLOWED_HOSTS`, segredo apenas como `env:NOME`, sem credenciais na URL, sem redirecionamento, no máximo 4 chamadas ao mesmo tempo.
+
+- **Quando dispara:** ao **entrar em Alerta** e/ou ao **voltar ao Normal** (você escolhe um ou os dois). Entrar em "Armando" nunca dispara, e voltar de "Armando" para "Normal" também não (nunca houve alerta).
+- **Na página da combinação** você pode **adicionar**, **editar** (nome, tipo, URL, método, cabeçalhos, corpo, quando dispara, timeout) e **ativar/desativar** cada automação. Uma desativada não é chamada.
+- **Payload padrão (webhook):**
+
+```json
+{
+  "source": "global-alerts",
+  "combination": {
+    "id": 7, "name": "Checkout fora", "state": "alert", "previous_state": "pending",
+    "rule": "and", "min_count": null, "duration_seconds": 120, "since": "2026-11-06T10:00:00.000Z",
+    "components": [
+      { "id": 12, "name": "Conversão A→B", "application": "checkout", "state": "alert", "since": "2026-11-06T09:58:10.000Z", "priority": 2 }
+    ]
+  },
+  "firedAt": "2026-11-06T10:02:05.000Z"
+}
+```
+
+- **Variáveis do modelo de corpo (modo API):** `{{combination.id}}`, `{{combination.name}}`, `{{combination.state}}`, `{{combination.previous_state}}`, `{{combination.rule}}` e `{{combination.components}}` (nomes separados por vírgula). Valores saem escapados para JSON.
+- O resultado de cada chamada (sucesso, falha ou pulada) aparece na página da combinação e na auditoria.
+
+### 10.5 O avaliador periódico (importante)
+
+A aplicação reage a eventos, mas **"por 2 minutos" exige um relógio**: se a regra vale desde as 10:00 e nenhum evento novo chega, alguém precisa acordar a combinação às 10:02. É o serviço **`combination-evaluator`** do `docker compose` (script `scripts/evaluate-combinations.mjs`), que chama `POST /api/combinations/evaluate` a cada 30 segundos (`EVALUATE_EVERY`). Ele também percebe o fim de um silêncio.
+
+- A combinação é reavaliada **na hora** a cada evento que muda o estado de um alerta (webhook, reconciliação ou silêncio). O avaliador cobre o resto.
+- **Atraso esperado:** o disparo por duração pode sair até ~30 s depois do tempo configurado.
+- **Sem o avaliador, as combinações com duração ficam presas em "Armando".** A tela de combinações e a de Status avisam quando ele não roda há mais de 2 minutos; a métrica `global_alerts_combination_evaluator_last_run_timestamp_seconds` permite alertar no Prometheus.
+- Fora do Docker: `node scripts/evaluate-combinations.mjs --url http://app:3000 --every 30` (sem `--every` roda uma vez).
+
+### 10.6 Pela API
+
+| Para quê | Chamada |
+|---|---|
+| Listar / criar | `GET /api/combinations` · `POST /api/combinations` (`name`, `rule`: `and`/`or`/`at_least`, `minCount`, `durationSeconds`, `alertIds`, `automations`) |
+| Ler / alterar / arquivar | `GET`, `PATCH`, `DELETE /api/combinations/{id}` |
+| Automações | `POST /api/combinations/{id}/automations` · `PATCH /api/combinations/{id}/automations/{automationId}` (qualquer campo, inclusive `enabled`) |
+| Reavaliar tudo (usado pelo avaliador) | `POST /api/combinations/evaluate` |
+
+### 10.7 Limites conhecidos
+
+- Não há "histerese" na volta ao normal: uma combinação que oscila pode disparar a automação várias vezes.
+- A automação roda **depois** da resposta; se o processo cair nesse intervalo, essa execução se perde (o mesmo vale para a remediação do alerta).
+- O estado de cada alerta é o que a ferramenta de monitoramento enviou; um alerta sem evento recente fica no último estado conhecido (a reconciliação ajuda).
+- Não existe combinação de combinações nem a regra "exatamente um".
+
+## 11. Referências
 
 - `docs/integrations/datadog.md`, `cloudwatch.md`, `appdynamics.md`, `generic.md`: estudo de cada fonte, equivalência de estados, limites e o que **não** foi verificado.
 - `docs/observability.md`: saúde da própria aplicação (`/status`, `/api/metrics`, alertas sugeridos).

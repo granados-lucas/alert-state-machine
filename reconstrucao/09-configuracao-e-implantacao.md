@@ -56,12 +56,16 @@ coletor de métricas (Prometheus) ────────────▶ /api/m
 
 | Destino | Para quê | Controle |
 |---|---|---|
-| Hosts de remediação | Remediação | Lista `REMEDIATION_ALLOWED_HOSTS`; sem redirecionamento; timeout |
+| Hosts de remediação | Remediação e automações de combinação | Lista `REMEDIATION_ALLOWED_HOSTS`; sem redirecionamento; timeout |
 | `https://api.<DD_SITE>` | Silenciar e reconciliar | Sites fixos; sem redirecionamento; timeouts 10 s e 30 s |
 | `https://sns.<região>.amazonaws.com` | Confirmar assinatura do SNS | Host validado; sem redirecionamento; 10 s |
 | PostgreSQL | Dados | Pool pequeno |
 
 Libere no firewall de saída só esses destinos.
+
+## Avaliador de combinações (processo à parte)
+
+As combinações com duração dependem de um relógio. Rode **sempre** o script do avaliador (05) como serviço ao lado da aplicação: `--url <endereço interno da aplicação> --every 30` (variáveis `EVALUATE_URL` e `AUTH_USER_HEADER`). Ele só chama `POST /api/combinations/evaluate`; não acessa o banco. Pode haver mais de um (a trava de linha evita transições duplicadas), mas um basta. Monitore-o pela métrica `combination_evaluator_last_run_timestamp_seconds` (10).
 
 ## Operação
 

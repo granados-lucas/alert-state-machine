@@ -19,6 +19,7 @@ O Global Alerts modela **cada alerta como uma máquina de estados** estimulada p
 7. **Reconciliação** (só Datadog): compara o estado de cada alerta com o estado real dos monitores, corrige divergências, cria alertas de monitores novos e aponta os que sumiram. Manual pela tela ou periódica por um script.
 8. **Observabilidade da própria aplicação**: saúde, métricas para Prometheus, tela de status e correlação de requisições nos logs.
 9. **Documentação dentro da aplicação** (opcional nesta reconstrução): páginas que exibem os manuais.
+10. **Combinações de alertas**: juntam sinais (por exemplo, uma queda de conversão de usuários e uma métrica de aplicação) numa regra **E**, **OU** ou **pelo menos N**, que precisa valer por uma **duração** ("os 2 alertando por 2 minutos"). A combinação tem estado próprio e dispara uma **automação** específica ao entrar em Alerta e/ou ao normalizar. Fica num menu próprio e **não altera** o mapa de jornadas nem o índice de saúde.
 
 ## Fora do escopo (versão original)
 

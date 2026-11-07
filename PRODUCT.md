@@ -22,6 +22,7 @@ Sistema interno da empresa. Usuários: pessoas de engenharia/operação que acom
 8. **Reconciliação com o Datadog** (`/reconciliation`, `POST /api/reconciliation`, `scripts/reconcile.mjs`): compara o estado de cada alerta com o `overall_state` dos monitores no Datadog e corrige divergências (webhook perdido, monitor silenciado, estado inicial), cria alertas de monitores novos e aponta os que sumiram. Tem modo de simulação, respeita o limite de uso da API (cabeçalhos `X-RateLimit-*`, 429) e roda manualmente pela tela ou periodicamente pelo script.
 9. **Auditoria:** todo evento recebido, mudança de estado, criação/alteração/arquivamento de alerta, mudança de remediação, execução de remediação e mudanças em jornadas ficam em uma trilha só de inserção.
 10. **Máquina de estados** (`/graph`): estados e transições permitidas.
+11. **Combinações de alertas** (`/combinations`, `/combinations/[id]`, `/api/combinations`, `scripts/evaluate-combinations.mjs`): uma combinação observa de 1 a 20 alertas existentes por uma regra (**E**, **OU** ou **pelo menos N**) que precisa valer por uma duração opcional (ex.: "os 2 alertando por 2 minutos") e tem estado próprio (**Normal**, **Armando**, **Alerta**). Ao entrar em Alerta e/ou ao voltar ao Normal dispara uma automação (chamada ou webhook; mesmo modelo e mesma segurança da remediação), que pode ser adicionada, editada e desativada na tela. Só o estado `alert` conta; alertas silenciados e arquivados não contam. Fica num menu próprio e **não altera o mapa de jornadas nem o índice de saúde**. Um avaliador periódico (~30 s) completa as durações.
 
 ## Fora do escopo
 
@@ -31,6 +32,7 @@ Sistema interno da empresa. Usuários: pessoas de engenharia/operação que acom
 - Silenciar e reconciliar fora do Datadog: as outras fontes (CloudWatch, AppDynamics, genérica) só enviam eventos por webhook, e a verificação da assinatura das mensagens do SNS não existe (ver `docs/integrations/`).
 - Dependências entre aplicações (substituídas por jornadas, decisão do solicitante em 2026-10-24).
 - Jornada por alerta: a jornada é definida por aplicação; um alerta pertence às jornadas da sua aplicação.
+- Combinações: não há combinação de combinações, regra "exatamente um" nem atraso na volta ao normal (histerese); combinações não entram no índice de saúde.
 
 ## Requisitos
 

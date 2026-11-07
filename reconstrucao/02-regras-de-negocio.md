@@ -179,6 +179,8 @@ Toda mutação grava uma linha em `audit_log` **na mesma transação** da mutaç
 
 Tipos de auditoria: `alert_created`, `alert_updated`, `alert_archived`, `state_changed`, `remediation_created`, `remediation_updated`, `remediation_run`, `journey_created`, `journey_updated`, `journey_applications_updated`, `journey_deleted`, `monitor_muted`, `monitor_unmuted`, `monitor_mute_failed`, `reconciliation_run` (mais `dependencies_updated`, legado: existe só porque valores de enum do PostgreSQL não podem ser removidos; uma reconstrução nova pode omiti-lo).
 
+Tipos de auditoria das combinações (seção 10): `combination_created`, `combination_updated`, `combination_archived`, `combination_state_changed`, `combination_automation_created`, `combination_automation_updated`, `combination_automation_run`.
+
 ## 9. Reconciliação (só Datadog)
 
 Objetivo: corrigir divergências causadas por webhook perdido, monitor silenciado ou alerta novo. Detalhes de API e limites em 06.
@@ -206,3 +208,68 @@ executar:
 ```
 
 Opções: `dryRun` (padrão falso), `createMissing` (padrão verdadeiro), `remediate` (padrão verdadeiro), `tags` (até 10), `pageSize` (10–1000, padrão 100), `maxPages` (1–500, padrão 200).
+
+## 10. Combinações de alertas
+
+Uma **combinação** observa de **1 a 20 alertas existentes** (não arquivados, sem repetição) e tem estado próprio. Ela existe para juntar sinais (causa e consequência) e disparar uma automação mais precisa que a de cada alerta isolado. **Não entra** no cálculo de saúde nem no mapa de jornadas (evita contar o mesmo problema em dobro).
+
+**Campos:** nome único (1–100), descrição opcional (≤500), regra, `minCount`, duração em segundos (0 a 86400, padrão 0), lista de alertas, arquivamento (`archivedAt`).
+
+**Regras** (valores `and`, `or`, `at_least`). Seja `alertando` o número de componentes que contam e `total` o número de componentes (inclusive os que não contam):
+
+| Regra | Vale quando |
+|---|---|
+| `and` (E) | `total ≥ 1` e `alertando = total` |
+| `or` (OU) | `alertando ≥ 1` |
+| `at_least` (pelo menos N) | `alertando ≥ minCount` (`minCount` entre 1 e o número de alertas; obrigatório só nesta regra e proibido nas outras) |
+
+**Um componente conta como "alertando"** somente se o estado dele é `alert` **e** não está arquivado **e** não está silenciado (`mutedUntil` no futuro). `warn`, `no_data` e `ok` não contam. Com a regra E, um componente arquivado ou silenciado impede a combinação de valer.
+
+**Estados:** `ok` (normal; estado inicial), `pending` (armando: a regra vale, mas a duração ainda não se cumpriu) e `alert`.
+
+```text
+passo(estado, valendoDesde, regraVale, duração, agora):
+  se regra NÃO vale  → estado = ok,  valendoDesde = nulo           (de pending ou alert: houve mudança)
+  se estado = alert  → nada muda
+  início = (estado = pending ? valendoDesde : agora)
+  se agora - início >= duração → estado = alert, valendoDesde = início   (duração 0: direto de ok para alert)
+  senão                        → estado = pending, valendoDesde = início
+```
+
+A contagem da duração **zera** se a regra deixar de valer. Uma combinação de um único alerta com duração também passa por `pending`.
+
+**Avaliação** (por combinação, numa transação que **trava a linha** da combinação; só atualiza se houver mudança):
+
+1. lê os componentes e conta os que estão alertando;
+2. aplica a regra e o passo acima;
+3. se o estado mudou: grava estado, instante da mudança, `valendoDesde` e a auditoria `combination_state_changed` (`from`, `to`, ids dos componentes alertando, regra, N, duração); se só o `valendoDesde` mudou, grava só ele;
+4. **depois do commit**, devolve as automações que devem rodar: ao entrar em `alert` (gatilho `alert`) ou ao voltar de `alert` para `ok` (gatilho `ok`). **`pending` nunca dispara**, e voltar de `pending` para `ok` também não (nunca houve alerta).
+
+Duas avaliações ao mesmo tempo da mesma combinação geram **uma** transição, **uma** auditoria e **uma** automação.
+
+**Quando avaliar:**
+
+1. **Após cada evento que muda o estado de um alerta** (webhook, reconciliação e sincronização do silêncio), as combinações que contêm aquele alerta, depois do commit do evento. Se a avaliação falhar, o evento continua válido (não devolva erro à fonte, que reenviaria um duplicado); registre a falha numa métrica.
+2. **Por um avaliador periódico** (a cada ~30 s) que reavalia **todas** as combinações não arquivadas. Sem ele, a duração nunca completa sozinha e o fim de um silêncio não é percebido. O atraso aceito é de até ~30 s além da duração.
+3. Ao **criar** e ao **editar** uma combinação (a regra pode já valer).
+
+Arquivar um alerta não dispara avaliação própria; o ciclo periódico cobre.
+
+**Automação da combinação:** mesmo cadastro e mesma segurança da remediação (seção 5): `webhook` ou `api`, URL, método, cabeçalhos (`env:NOME` para segredos), modelo de corpo, timeout 100–15000 ms, ativa/inativa, lista de destinos permitidos, limite de concorrência. Diferenças: pertence a uma combinação e os gatilhos são só `alert` e `ok` (pelo menos um). Pode ser **criada, editada (qualquer campo) e desativada** depois. Payload padrão do tipo `webhook`:
+
+```json
+{ "source": "global-alerts",
+  "combination": { "id": 7, "name": "Checkout fora", "state": "alert", "previous_state": "pending",
+                   "rule": "and", "min_count": null, "duration_seconds": 120, "since": "2026-11-06T10:00:00.000Z",
+                   "components": [ { "id": 12, "name": "Conversão A→B", "application": "checkout", "state": "alert",
+                                     "since": "2026-11-06T09:58:10.000Z", "priority": 2 } ] },
+  "firedAt": "2026-11-06T10:02:05.000Z" }
+```
+
+`since` da combinação = `valendoDesde` (ou o instante da última mudança); `since` de cada componente = quando o alerta mudou de estado pela última vez. Variáveis do modelo de corpo (tipo `api`): `{{combination.id}}`, `{{combination.name}}`, `{{combination.state}}`, `{{combination.previous_state}}`, `{{combination.rule}}`, `{{combination.components}}` (nomes separados por vírgula), escapadas para JSON. Cada execução grava um registro (`success`/`failed`/`skipped`, HTTP, duração, erro) e a auditoria `combination_automation_run` (ator `system:combination`).
+
+**Validações de cadastro:** nome repetido → conflito (409); alerta inexistente ou arquivado → 400; mais de 20 alertas ou repetidos → 400; `at_least` sem N, N maior que o número de alertas, ou N nas outras regras → 400. Na edição a regra é validada sobre o **resultado** (lista de alertas nova + N + regra): trocar `at_least` por E exige limpar o N no mesmo pedido. Sem mudança real nada é gravado. **Arquivar** tira a combinação das listagens e da avaliação, mantém o histórico (e pode ser desfeito).
+
+**Heartbeat:** a cada ciclo do avaliador periódico grava-se o instante numa tabela de **uma linha** (vale entre instâncias e reinícios); as métricas (10) e a tela de status usam esse valor.
+
+**Auditoria:** `combination_created`, `combination_updated` (`changes` antes/depois, inclusive a lista de alertas), `combination_archived`, `combination_state_changed`, `combination_automation_created`, `combination_automation_updated` (`changes`; de cabeçalhos só os nomes), `combination_automation_run`.

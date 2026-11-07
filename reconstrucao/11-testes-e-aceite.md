@@ -81,6 +81,20 @@ Meta usada na versão original: cobertura de **90% de linhas** e **80% de ramos*
 
 41. `/api/health/live` 200 sem banco; `/api/health` 503 com o banco fora; `/api/metrics` 200 mesmo com o banco fora (`database_up 0`), com `HELP`/`TYPE` sempre presentes e rótulos sem cardinalidade livre.
 
+### Combinações de alertas
+
+42. **Regras** — com 3 alertas, `and`: 2 em `alert` não vale, 3 vale; `or`: 1 vale, 0 não; `at_least 2`: 1 não vale, 2 vale. `and` sem componentes nunca vale. `warn`, `no_data` e `ok` não contam.
+43. **Duração** — regra `and` com 120 s: ao valer vira `pending` (sem automação); aos 119 s continua `pending`; aos 120 s vira `alert` e devolve a automação. Se um alerta sai de `alert` antes, volta a `ok` sem automação e, ao reentrar, a contagem recomeça do zero. Uma combinação de um alerta com duração 300 s também passa por `pending`. Duração 0 vai direto para `alert`.
+44. **Silenciado e arquivado** — um alerta silenciado ou arquivado não conta. Alerta em `alert` silenciado por 1 min **sem nenhum evento novo**: depois de 2 min, o avaliador periódico passa a contá-lo. Com `and`, um componente arquivado impede o disparo e a tela avisa.
+45. **Gatilhos** — a automação com gatilho só `alert` roda na entrada em `alert` e não na volta a `ok`; com `alert` e `ok` roda nas duas; **nunca** em `pending`, e voltar de `pending` para `ok` não roda nada. Automação desativada não é chamada.
+46. **Automação (saída)** — payload padrão com `combination` e a lista de `components` (estado, aplicação, prioridade, desde); modelo de corpo `{{combination.name}}` com aspas ou quebra de linha gera JSON válido; host fora da lista → `skipped` sem chamada; cabeçalho `Authorization` literal → 400 ao cadastrar; `env:NOME` ausente → execução `failed`; resposta 500 → `failed`; execução e auditoria gravadas.
+47. **Edição das automações** — qualquer campo pode ser alterado (URL, método, cabeçalhos, corpo, gatilhos, timeout, nome, `enabled`); o resultado é revalidado (webhook com corpo, URL com credenciais, cabeçalho secreto literal → erro); a auditoria guarda antes/depois (de cabeçalhos, só os nomes); sem mudança real nada é gravado; automação de outra combinação → 404.
+48. **Cadastro** — nome repetido 409; alerta inexistente ou arquivado 400; 21 alertas ou repetidos 400; `at_least` sem N, N maior que a lista ou N em `and`/`or` 400; atualizar a lista de 3 para 2 alertas com `at_least 3` → erro; trocar `at_least` por `and` sem limpar N → erro; editar reavalia na hora; arquivar tira da listagem e mantém a leitura por id; auditoria de criar, alterar (com a lista de alertas antes/depois) e arquivar.
+49. **Concorrência** — duas avaliações ao mesmo tempo da mesma combinação geram **uma** transição, **uma** auditoria e **uma** automação (prove em PostgreSQL de verdade).
+50. **Ligação com a ingestão** — o evento que muda o estado do componente avalia a combinação logo depois do commit (webhook, reconciliação e sincronização do silêncio); evento repetido ou antigo não avalia; se a avaliação falhar, o evento continua gravado e a resposta à fonte não muda.
+51. **Avaliador periódico** — `POST /api/combinations/evaluate` completa as durações vencidas, executa as automações depois da resposta, grava o heartbeat (linha única) e devolve `{evaluated, changed}`; o script sai com 0, 1 (erro da aplicação), 2 (uso) ou 4 (inacessível) e não para por falha de rede; as métricas e a tela de status mostram "parado" depois de 2 minutos sem ciclo.
+52. **Isolamento** — criar, alterar ou disparar combinações não muda o mapa de jornadas nem o índice de saúde de nenhuma aplicação ou jornada.
+
 ## Como validar sem simulador
 
 Com a aplicação e o banco no ar, use `curl`:

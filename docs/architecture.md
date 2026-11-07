@@ -10,6 +10,7 @@ Next.js 16.4.3 (App Router, Turbopack), React 19.3.0, TypeScript 5.9 estrito, Ta
 src/
 ├── domain/
 │   ├── alert-machine/        # estados, eventos, transition(), listEdges(): puro, sem I/O
+│   ├── combination/          # regra (E, OU, pelo menos N) e transição de estado da combinação: puro, sem I/O
 │   ├── mute.ts               # regras do silêncio (prazo máximo, vigência)
 │   └── application-status.ts # saúde: cor (pior estado com rebaixamento por prioridade) e índice ponderado pelo peso = prioridade
 ├── providers/                # PORTA para ferramentas de monitoramento (uma pasta por fonte)
@@ -28,18 +29,21 @@ src/
 │   ├── muting.ts             # silenciar/reativar monitor no provedor: intenção → provedor → resultado, com recuperação
 │   ├── reconcile.ts          # reconciliação: lê os monitores do provedor e corrige divergências (respeita limite de uso)
 │   ├── journeys.ts           # criar/editar/trocar aplicações/remover jornada (com auditoria)
+│   ├── combinations.ts       # criar/atualizar/arquivar combinação (reavalia na hora); combination-queries.ts: mapa e detalhe
+│   ├── combination-evaluator.ts   # avalia as combinações contra o estado dos alertas (trava de linha, auditoria, heartbeat)
+│   ├── combination-automations.ts # automações da combinação: cadastro, gatilhos alert/ok, execução (reusa remediation.ts)
 │   ├── queries.ts            # mapa de jornadas, listagem paginada, detalhes
 │   ├── telemetry.ts          # estado da própria aplicação lido do banco (tela /status e /api/metrics)
 │   ├── observability.ts      # liga a telemetria ao banco, às fontes e ao pool reais; versão e uptime
 │   └── http.ts, runtime.ts   # identidade do ator (cabeçalho do SSO), erros, `after()`
 ├── app/
-│   ├── api/                  # webhooks/[provider], alerts, applications, health (+ live), metrics, mute-operations, reconciliation
-│   └── páginas               # / (mapa de jornadas), /journeys/[id], /journeys/new, /alerts, /alerts/[id], /alerts/new, /applications/[name], /graph, /status
+│   ├── api/                  # webhooks/[provider], alerts, applications, health (+ live), metrics, mute-operations, reconciliation, combinations (+ evaluate)
+│   └── páginas               # / (mapa de jornadas), /journeys/[id], /journeys/new, /alerts, /alerts/[id], /alerts/new, /applications/[name], /graph, /status, /combinations (+ [id], new, [id]/edit)
 ├── lib/metrics.ts            # registro mínimo de métricas (contadores, histogramas) em formato Prometheus
 ├── components/               # journey-map (mapa), journey-form, alert-graph (máquina, React Flow), alert-form, ui
-├── db/                       # schema (8 tabelas), pool pg
+├── db/                       # schema (index, combinations, common), pool pg
 └── test/db.ts                # PGlite com as migrações reais, só para testes
-drizzle/                      # 0000_init, 0001_audit_immutable (trigger), 0002_drop_dependencies, 0003_journeys, 0004_monitor_mute, 0005_provider_state, 0006_reconciliation, 0007_mute_operations
+drizzle/                      # 0000_init, 0001_audit_immutable (trigger), 0002_drop_dependencies, 0003_journeys, 0004_monitor_mute, 0005_provider_state, 0006_reconciliation, 0007_mute_operations, 0008_combinations
 simulator/                    # APLICAÇÃO SEPARADA que simula o Datadog (ver abaixo)
 Dockerfile, compose.yaml
 ```
@@ -118,6 +122,18 @@ Se o processo cair entre 2 e 3, o Datadog já aplicou, mas a operação continua
 
 `/docs` e `/docs/[slug]` renderizam os arquivos Markdown do repositório (lista em `src/server/docs.ts`; fonte única, nada é copiado para o código) com `marked`. As páginas são **estáticas, geradas no build** (`generateStaticParams`, `dynamicParams = false`), então em produção não há leitura de arquivo; o `.dockerignore` libera `PRODUCT.md` e `docs/**/*.md` para o build. HTML cru dentro dos arquivos é escapado, links externos abrem com `rel="noreferrer noopener"` e caminhos de documentos citados (`docs/observability.md`) viram links entre páginas. Para publicar um documento novo, acrescente uma entrada em `DOCS`.
 
+## Combinações de alertas
+
+Uma combinação observa 1 a 20 alertas por uma regra (`and`, `or`, `at_least`) com duração opcional e tem estado próprio (`ok`, `pending`, `alert`). Não entra em `application-status` nem no mapa de jornadas.
+
+- **Domínio puro** (`src/domain/combination`): `ruleMet(config, alerting, total)` e `nextState({ state, satisfiedSince, met, durationSeconds, now })`. Nada de banco nem relógio.
+- **Avaliador** (`src/server/combination-evaluator.ts`): `evaluateCombinations(db, { alertId?, combinationIds?, now? })`. Cada combinação é avaliada numa transação que trava a linha (`FOR UPDATE`), conta os componentes **alertando** (`state = alert`, não arquivado, não silenciado), chama `nextState`, grava estado, `satisfied_since` e auditoria `combination_state_changed`, e devolve as automações a executar **depois do commit** (`pending`). Duas avaliações concorrentes geram uma transição.
+- **Quando roda:** (1) dentro de `ingestEvent`, depois do commit, sempre que o evento muda o estado de um alerta (`outcome = applied`): cobre webhook, reconciliação e a sincronização do silêncio; uma falha aqui não derruba o evento (conta `combination_evaluation_errors_total`); (2) por `POST /api/combinations/evaluate`, chamado a cada ~30 s por `scripts/evaluate-combinations.mjs` (serviço `combination-evaluator` do compose), que completa as durações e percebe o fim de silêncios; a rota grava o heartbeat (`combination_evaluator_heartbeat`, linha única). Arquivar um alerta não dispara avaliação própria: o ciclo periódico cobre.
+- **Automações** (`src/server/combination-automations.ts`): mesmo cadastro e mesma segurança da remediação (reutiliza `outboundShape`, `execute` e `withSlot` de `remediation.ts`), tabelas próprias (`combination_automations`, `combination_automation_runs`), gatilhos só `alert` e `ok`. O corpo padrão e as variáveis `{{combination.*}}` são montados em `requestSpec`.
+- **Cadastro e leitura:** `combinations.ts` (criar, atualizar, arquivar; reavalia na hora) e `combination-queries.ts` (mapa e detalhe).
+- **Tela:** `/combinations` (mapa por estado), `/combinations/[id]` (detalhe, automações com criar/editar/ativar/desativar, execuções, auditoria), `/combinations/new`, `/combinations/[id]/edit`.
+- **Dados:** `combinations`, `combination_alerts`, `combination_automations`, `combination_automation_runs`, `combination_evaluator_heartbeat`; `audit_log.combination_id`. Migração `0008_combinations`.
+
 ## Observabilidade
 
 `/api/health/live` (processo), `/api/health` (banco), `/api/metrics` (Prometheus) e a tela `/status`. Contadores e histogramas ficam na memória do processo (`src/lib/metrics.ts`, sem dependências); o que vive no banco (alertas por estado, último evento por fonte, silêncios pendentes, última reconciliação) é lido na coleta, então sobrevive a reinícios. O webhook propaga `X-Request-Id` para os logs. `/api/metrics` não tem token (decisão: o projeto não usa tokens compartilhados); o acesso é por rede. Detalhes, métricas e alertas sugeridos em `docs/observability.md`.
@@ -169,6 +185,9 @@ Aplicação separada (próprio `package.json` e Dockerfile, sem dependências, s
 | Alerta silenciado continua contando na saúde | A saúde deve refletir a realidade; o silêncio é só um aviso visual | Se o negócio quiser excluir silenciados do cálculo |
 | Reconciliação em segundo plano no processo da aplicação, disparada por tela/API/script | Simples e sem novo serviço; o script externo só chama a API | Fila durável/worker dedicado se as execuções ficarem longas ou o processo reiniciar com frequência |
 | "Ausentes" só relatados, nunca arquivados | Uma listagem parcial ou um filtro errado não pode apagar alertas | Opção explícita de arquivar, com confirmação |
+| Combinação avaliada pelo estado atual no banco, com `FOR UPDATE`, e não por contadores de eventos | Idempotente e simples: chamar o avaliador a mais não faz mal; eventos fora de ordem e silêncios que expiram não corrompem a contagem | Se a quantidade de combinações tornar o ciclo periódico caro: avaliar só as que têm componente alertando ou pendente |
+| Avaliador periódico como processo à parte (script que chama a API, ~30 s) | A duração exige um relógio e a aplicação só reage a eventos; o atraso de até ~30 s foi aceito pelo solicitante | Precisão de segundos, ou mais de uma instância sem coordenação |
+| Combinações fora do índice de saúde e do mapa de jornadas | Pedido do solicitante; evita contar causa e consequência em dobro | — |
 | Auditoria única (`audit_log`) | Linha do tempo simples; trigger garante imutabilidade | Volume alto: particionar por mês |
 | Remediação executada depois da resposta (`after()`) | O Datadog tem timeout de 15 s; remediação lenta não pode causar reenvio | Fila durável se perder execuções em queda do processo for inaceitável |
 | PGlite nos testes + PostgreSQL real no Docker/simulador | Testes rápidos sem servidor; a concorrência real só aparece no PostgreSQL | — |

@@ -72,6 +72,20 @@ Erros: 404 alerta inexistente; 400 arquivado; 501 fonte sem suporte; 503 sem cre
 | `PUT /api/journeys/{id}/applications` | `{applications:[nomes]}`: **substitui** o conjunto. Devolve `{applications:[...]}` |
 | `DELETE /api/journeys/{id}` | Remove só a jornada. `{deleted:true}` |
 
+## Combinações
+
+| Rota | Descrição |
+|---|---|
+| `GET /api/combinations` | `{items:[...]}`: combinações não arquivadas (`?includeArchived=true` inclui as arquivadas), `alert` primeiro, depois `pending`, depois `ok`. Cada item traz os campos da combinação, `components` (`id, name, application, state, priority, stateChangedAt, muted, archived, alerting`), `alertingCount` e `hasArchivedComponent` |
+| `POST /api/combinations` | Cria (201 com a combinação já avaliada). Corpo: `{name, description?, rule ("and"\|"or"\|"at_least"), minCount?, durationSeconds? (0–86400), alertIds (1–20), automations? (até 10)}`. 409 nome repetido; 400 alerta inexistente/arquivado ou regra incoerente (02, seção 10) |
+| `GET /api/combinations/{id}` | A combinação com `components`, `automations`, `runs` (últimas 20) e `audit` (últimas 50). 404 se não existe (arquivadas também são lidas) |
+| `PATCH /api/combinations/{id}` | Altera `name`, `description`, `rule`, `minCount`, `durationSeconds`, `alertIds`, `archived` (pelo menos um). Reavalia na hora. Devolve a combinação |
+| `DELETE /api/combinations/{id}` | **Arquiva** (não apaga). Devolve a combinação |
+| `POST /api/combinations/{id}/automations` | Cria automação (201). Mesmo corpo da remediação, com `triggerStates` só `alert`/`ok` |
+| `PATCH /api/combinations/{id}/automations/{automationId}` | Altera qualquer campo da automação, inclusive `enabled` (pelo menos um); o resultado é revalidado por inteiro. 404 se a automação é de outra combinação |
+| `POST /api/combinations/evaluate` | Reavalia **todas** as combinações, grava o heartbeat, executa as automações depois da resposta e devolve `{evaluated, changed}`. Chamada pelo avaliador periódico; sem corpo |
+
+Os erros seguem o quadro acima (400/404/409). As automações de combinação executam depois da resposta, como a remediação.
 ## Reconciliação
 
 | Rota | Descrição |
@@ -91,3 +105,7 @@ Erros: 404 alerta inexistente; 400 arquivado; 501 fonte sem suporte; 503 sem cre
 ## Script de reconciliação periódica
 
 Um script sem dependências (Node 18+ ou equivalente em outra linguagem) que chama `POST /api/reconciliation`, espera `GET /api/reconciliation/{id}` até terminar e sai com código: `0` concluída, `1` falhou, `2` uso incorreto, `3` parcial, `4` aplicação inacessível, `5` já havia execução. Opções: `--url`, `--dry-run`, `--no-create`, `--no-remediate`, `--tag` (repetível), `--page-size`, `--every N` (repete a cada N segundos, mínimo 60), `--timeout` (segundos esperando; padrão 1800), `--identity` (valor do cabeçalho de identidade; padrão `reconciler@job`). Pode ser agendado por cron ou pelo agendador da plataforma; o script **não** acessa banco nem Datadog.
+
+## Script do avaliador periódico de combinações
+
+Um script sem dependências que faz `POST /api/combinations/evaluate` a cada `--every` segundos (mínimo 10; sem a opção, roda uma vez) com o cabeçalho de identidade e registra `avaliadas N, mudaram M`. Uma falha de rede ou um erro da aplicação não derruba o laço. Códigos de saída (uma execução): `0` concluída, `1` a aplicação respondeu erro, `2` uso incorreto, `4` aplicação inacessível. **Precisa estar sempre rodando** (serviço, cron a cada minuto com `--every` ou equivalente): sem ele, combinações com duração não completam sozinhas.

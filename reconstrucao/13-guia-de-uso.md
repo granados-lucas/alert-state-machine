@@ -154,3 +154,14 @@ Pré-requisito: `DD_API_KEY`, `DD_APP_KEY` (e `DD_SITE`) configurados e `DD_API_
 | Silenciar responde 409 | há uma operação de silêncio em andamento ou pendente | aguardar 1 minuto ou `POST /api/mute-operations/recover` |
 | Reconciliação "rate limit reached (429)" | cota da API esgotada | tentar de novo mais tarde; reduzir a frequência |
 | "a reconciliation is already running" | já há uma execução (ou uma travada, liberada em 30 min) | aguardar |
+## 10. Combinações de alertas (sinais combinados)
+
+Um alerta sozinho diz pouco. Uma **combinação** observa de **1 a 20 alertas que já existem** e só dispara quando a regra vale. Junta, por exemplo, uma queda de conversão entre o ponto A e o ponto B com uma latência alta no checkout: causa e consequência no mesmo disparo, para rodar uma automação específica. Fica no menu **Combinações** e **não altera** o mapa de jornadas nem a saúde.
+
+- **Regras:** **E** (todos em alerta), **OU** (pelo menos um) e **Pelo menos N**. Só o estado Alerta conta; aviso, sem dados, normal, silenciados e arquivados não contam.
+- **Duração (minutos):** a regra precisa valer sem interrupção por esse tempo; se deixar de valer, a contagem recomeça. 0 = dispara assim que valer.
+- **Estados:** **Normal**, **Armando** (a regra vale, falta cumprir a duração; não dispara) e **Alerta**.
+- **Criar:** Combinações → Nova combinação → nome, busca e escolha dos alertas, regra, duração e, se quiser, uma automação.
+- **Automação:** chamada de saída (webhook com payload padrão ou API própria), com as mesmas regras de segurança da remediação. Dispara ao **entrar em Alerta** e/ou ao **voltar ao Normal**. Na página da combinação dá para **adicionar, editar e ativar/desativar** cada automação.
+- **Avaliador periódico:** um serviço chama a aplicação a cada ~30 s para completar as durações. **Se ele parar, as combinações com duração ficam presas em "Armando"**; a tela de combinações e a de Status avisam. O disparo por duração pode atrasar até ~30 s.
+- **Limites:** sem atraso na volta ao normal (uma combinação que oscila pode disparar várias vezes); a automação roda depois da resposta e pode se perder se o processo cair; não há combinação de combinações nem a regra "exatamente um".

@@ -39,6 +39,11 @@ Prefixo `global_alerts_`. **Contadores e histogramas vivem na memória do proces
 | `mute_operations_pending`, `mute_operations_oldest_pending_seconds` | medida | | silêncios sem desfecho gravado e a idade do mais antigo (0 = nenhum) |
 | `reconciliation_last_run_timestamp_seconds` | medida | | início da última reconciliação (0 = nunca) |
 | `remediation_recent_failed` | medida | | falhas entre as últimas 50 remediações (consulta pela chave primária decrescente, barata) |
+| `combinations` | medida | `state` | combinações não arquivadas por estado (`ok`, `pending`, `alert`) |
+| `combination_evaluator_last_run_timestamp_seconds` | medida | | fim do último ciclo do avaliador (0 = nunca); vem de uma tabela de uma linha, vale entre instâncias |
+| `combination_transitions_total` | contador | `to` | mudanças de estado das combinações |
+| `combination_automation_runs_total` | contador | `status` | execuções de automação de combinação |
+| `combination_evaluation_errors_total` | contador | | falhas ao avaliar combinações depois de um evento (o avaliador periódico recupera) |
 | `database_up`, `database_latency_seconds`, `database_pool_connections{state}` | medida | | banco e pool (`total`, `idle`, `waiting`) |
 | `build_info{version}`, `process_uptime_seconds`, `process_resident_memory_bytes` | medida | | versão e processo |
 
@@ -56,6 +61,8 @@ Em ambientes com várias cópias do módulo (hot reload, múltiplos bundles), ma
 | `increase(global_alerts_webhook_requests_total{outcome=~"invalid\|error"}[10m]) > 0` | payload fora do formato (perde eventos) ou erro interno |
 | `global_alerts_mute_operations_oldest_pending_seconds > 600` | silêncio aplicado na fonte e não gravado, sem recuperação |
 | `global_alerts_remediation_recent_failed > 0` | remediação falhando |
+| `time() - global_alerts_combination_evaluator_last_run_timestamp_seconds > 120` e `global_alerts_combinations > 0` | o avaliador parou: combinações com duração ficam presas em "Armando" sem nenhum erro visível |
+| `increase(global_alerts_combination_evaluation_errors_total[10m]) > 0` | a avaliação depois de eventos está falhando |
 | `global_alerts_database_pool_connections{state="waiting"} > 0` por vários minutos | pool saturado |
 | `increase(global_alerts_unhandled_errors_total[10m]) > 0` | erro inesperado |
 

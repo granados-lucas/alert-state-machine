@@ -50,6 +50,8 @@ Exigências mínimas de ambiente: PostgreSQL 14 ou superior (a versão original 
 | **Remediação** | Chamada de saída (webhook ou API) feita quando o alerta entra em certos estados |
 | **Reconciliação** | Leitura do estado real dos monitores na fonte para corrigir divergências (só Datadog) |
 | **Silêncio** | Ação de silenciar um monitor na fonte por um prazo (só Datadog) |
+| **Combinação** | Observa de 1 a 20 alertas por uma regra (E, OU, pelo menos N) com duração opcional; tem estado próprio (Normal, Armando, Alerta) e dispara uma automação. Não entra na saúde nem no mapa de jornadas |
+| **Automação** | Chamada de saída (webhook ou API) feita quando uma combinação entra em Alerta e/ou volta ao Normal; mesmo modelo e mesma segurança da remediação |
 
 ## Nunca foi validado com sistemas reais
 

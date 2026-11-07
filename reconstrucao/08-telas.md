@@ -59,6 +59,23 @@ Ao salvar → detalhe do alerta. Aviso: este formulário **não cria o monitor n
 - **Auditoria** completa do alerta (até 200 linhas): quem, quando, tipo legível ("Mudança de estado", "Monitor silenciado no provedor"…) e antes/depois.
 - 404 se não existe.
 
+## Combinações (`/combinations`)
+
+- Menu próprio **Combinações**; **não altera** a tela inicial (mapa de jornadas) nem a saúde.
+- Três seções, nesta ordem: **Em alerta**, **Armando**, **Normais** (cada uma com a contagem). Cartão por combinação: nome (link), pílula de estado (Normal / Armando / Alerta, com ponto e texto, nunca só cor), regra em texto ("E · 2 min", "OU", "Pelo menos 2 de 3 · 5 min"), e em **Armando** o tempo que falta ("faltam 1 min 30 s"); a lista dos alertas componentes (estado, nome com link, "Silenciado", "Arquivado") com **realce** de quem está alertando; aviso quando há alerta arquivado ("com a regra E a combinação não consegue disparar").
+- Atualização automática a cada 5 s. Botão **Nova combinação**. Estado vazio com convite para criar a primeira.
+- Faixa de aviso quando existem combinações e o avaliador periódico não rodou nos últimos 2 minutos.
+
+## Detalhe da combinação (`/combinations/{id}`)
+
+- Cabeçalho: nome, descrição, estado, regra, "estado desde", "regra valendo desde", botões **Editar** e **Arquivar/Restaurar**.
+- Tabela dos alertas observados (estado, alerta, aplicação, **se conta** e por quê: "alertando", "não (silenciado)", "não (arquivado)", desde).
+- **Automações**: lista (nome, tipo, URL, quando dispara, timeout, Ativa/Desativada) com **Ativar/Desativar**, **Editar** (formulário completo preenchido) e **Adicionar automação**; execuções recentes (estado, resultado, HTTP, duração) e **auditoria** completa.
+
+## Nova / editar combinação (`/combinations/new`, `/combinations/{id}/edit`)
+
+Campos: nome, descrição, **busca de alertas pelo nome** (por botão ou Enter; resultado com estado e aplicação; adicionar e remover; de 1 a 20), **regra** (E, OU, Pelo menos N; N só nesta), **duração em minutos** (0 = dispara assim que a regra valer) e, só na criação, a seção opcional **Automação** (os mesmos campos de uma automação: nome, tipo, URL, método e corpo-modelo no tipo API, cabeçalhos em JSON, gatilhos **Alerta**/**Normal**, timeout). Lembrete na tela: só o estado Alerta conta; aviso, sem dados, normal, silenciados e arquivados não contam. Erros da API em lista, no mesmo formato dos outros formulários.
+
 ## Reconciliação (`/reconciliation`)
 
 - Cartão **Nova execução**: opções (**simular** [marcado por padrão], criar alertas de monitores novos, executar remediações, filtro por tags da fonte) e botão **Reconciliar**. Desabilitado, com o motivo, se a API do Datadog não está configurada ou se já há uma execução em andamento.
@@ -75,6 +92,8 @@ Ao salvar → detalhe do alerta. Aviso: este formulário **não cria o monitor n
 - Indicadores: **Banco de dados** (conectado + latência, ou indisponível), **Silêncios pendentes** (quantidade e idade do mais antigo), **Remediações** (falhas e puladas entre as últimas 50), **Versão e tempo no ar**.
 - **Fontes de alertas**: webhook único habilitado ou **desligado** (sem `WEBHOOK_SECRET` válido; avisar com destaque), e por fonte: API configurada ou não, **último evento aplicado** (data e "há X"). Nota: só o operador conhece o ritmo normal de cada fonte; para alertar "fonte parada" use a métrica no Prometheus.
 - **Alertas ativos por estado** (contadores) e **última reconciliação**.
+
+- Cartão **Avaliador de combinações**: "Em dia · há N s" (verde), "Parado · há N min" (vermelho, quando o último ciclo tem mais de 2 minutos) ou "Nunca rodou" (vermelho) quando há combinações; "Sem combinações" caso contrário.
 
 ## Documentação (`/docs`) — opcional
 

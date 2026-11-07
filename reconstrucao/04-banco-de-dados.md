@@ -17,7 +17,9 @@ CREATE TYPE audit_kind AS ENUM (
   'alert_created', 'alert_updated', 'alert_archived', 'state_changed',
   'remediation_created', 'remediation_updated', 'remediation_run',
   'journey_created', 'journey_updated', 'journey_applications_updated', 'journey_deleted',
-  'monitor_muted', 'monitor_unmuted', 'monitor_mute_failed', 'reconciliation_run'
+  'monitor_muted', 'monitor_unmuted', 'monitor_mute_failed', 'reconciliation_run',
+  'combination_created', 'combination_updated', 'combination_archived', 'combination_state_changed',
+  'combination_automation_created', 'combination_automation_updated', 'combination_automation_run'
 );
 
 -- ===== Aplicações e jornadas =====
@@ -186,7 +188,80 @@ CREATE TABLE mute_operations (
 );
 -- No máximo uma operação pendente por alerta.
 CREATE UNIQUE INDEX mute_operations_one_pending_idx ON mute_operations (alert_id) WHERE status = 'pending';
-CREATE INDEX mute_operations_alert_id_idx ON mute_operations (alert_id, id);
+CREATE INDEX mute_operations_alert_id_idx ON mute_operations (alert_id, id);-- ===== Combinações de alertas =====
+CREATE TYPE combination_rule  AS ENUM ('and', 'or', 'at_least');
+CREATE TYPE combination_state AS ENUM ('ok', 'pending', 'alert');
+
+CREATE TABLE combinations (
+  id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name             text NOT NULL UNIQUE,
+  description      text,
+  rule             combination_rule NOT NULL,
+  min_count        smallint,
+  duration_seconds integer NOT NULL DEFAULT 0,
+  state            combination_state NOT NULL DEFAULT 'ok',
+  state_changed_at timestamptz NOT NULL DEFAULT now(),
+  satisfied_since  timestamptz,                               -- desde quando a regra vale sem interrupção (nulo em 'ok')
+  archived_at      timestamptz,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT combinations_duration_range CHECK (duration_seconds BETWEEN 0 AND 86400),
+  -- min_count é obrigatório (>= 1) só em at_least. Atenção: com min_count nulo a comparação dá "desconhecido"
+  -- e o CHECK aceitaria; por isso o "IS NOT NULL" explícito.
+  CONSTRAINT combinations_min_count_rule CHECK (
+    (rule = 'at_least' AND min_count IS NOT NULL AND min_count >= 1) OR (rule <> 'at_least' AND min_count IS NULL))
+);
+
+CREATE TABLE combination_alerts (
+  combination_id bigint NOT NULL REFERENCES combinations(id),
+  alert_id       bigint NOT NULL REFERENCES alerts(id),
+  PRIMARY KEY (combination_id, alert_id)
+);
+CREATE INDEX combination_alerts_alert_id_idx ON combination_alerts (alert_id);
+
+CREATE TABLE combination_automations (
+  id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  combination_id bigint NOT NULL REFERENCES combinations(id),
+  name           text NOT NULL,
+  mode           remediation_mode NOT NULL,
+  url            text NOT NULL,
+  method         text NOT NULL DEFAULT 'POST',
+  headers        jsonb NOT NULL DEFAULT '{}'::jsonb,           -- valores sensíveis só como "env:NOME"
+  body_template  text,
+  trigger_states combination_state[] NOT NULL DEFAULT '{alert}',
+  timeout_ms     integer NOT NULL DEFAULT 5000,
+  enabled        boolean NOT NULL DEFAULT true,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT combination_automations_timeout_range CHECK (timeout_ms BETWEEN 100 AND 15000),
+  CONSTRAINT combination_automations_no_pending_trigger CHECK (NOT ('pending' = ANY (trigger_states)))
+);
+CREATE INDEX combination_automations_combination_id_idx ON combination_automations (combination_id);
+
+CREATE TABLE combination_automation_runs (
+  id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  automation_id  bigint NOT NULL REFERENCES combination_automations(id),
+  combination_id bigint NOT NULL REFERENCES combinations(id),
+  trigger_state  combination_state NOT NULL,
+  status         run_status NOT NULL,
+  http_status    smallint,
+  duration_ms    integer,
+  error          text,
+  at             timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX combination_automation_runs_combination_id_idx ON combination_automation_runs (combination_id, at);
+CREATE INDEX combination_automation_runs_automation_id_idx  ON combination_automation_runs (automation_id);
+
+-- Uma única linha: fim do último ciclo do avaliador periódico.
+CREATE TABLE combination_evaluator_heartbeat (
+  id          smallint PRIMARY KEY DEFAULT 1,
+  last_run_at timestamptz NOT NULL,
+  CONSTRAINT combination_evaluator_heartbeat_single_row CHECK (id = 1)
+);
+
+-- A auditoria passa a poder apontar para a combinação.
+ALTER TABLE audit_log ADD COLUMN combination_id bigint REFERENCES combinations(id);
+CREATE INDEX audit_log_combination_id_idx ON audit_log (combination_id, id);
 ```
 
 ## Notas de uso do esquema
@@ -199,6 +274,7 @@ CREATE INDEX mute_operations_alert_id_idx ON mute_operations (alert_id, id);
 - O mapa agrupa `alerts` por `(aplicação, estado, prioridade)` só dos não arquivados (índice parcial acima).
 - Tabelas de histórico (`webhook_events`, `audit_log`, `remediation_runs`) crescem sem parar. Defina uma política de retenção/particionamento antes de produção (a versão original **não** tem; é uma pendência). O gatilho da auditoria impede `DELETE`: para expirar dados antigos, particione por data e desanexe partições (ou ajuste o gatilho com decisão consciente).
 - Pool de conexões: limitado (a versão original usa no máximo 5 conexões, timeout de conexão de 5 s, ociosa 30 s), criado sob demanda e **um só ponto de conexão** no código.
+- **Combinações**: a avaliação trava a linha de `combinations` (`SELECT ... FOR UPDATE`) e lê o estado atual dos alertas; nunca guarde contadores de eventos. As tabelas `combination_automation_runs` e `audit_log` crescem sem parar (retenção, como as outras de histórico).
 
 ## Formato da auditoria (`details` por tipo)
 
@@ -219,3 +295,10 @@ CREATE INDEX mute_operations_alert_id_idx ON mute_operations (alert_id, id);
 | `monitor_unmuted` | `reason`, `scope`, `allScopes`, `providerState`, `operationId`, `recovered` |
 | `monitor_mute_failed` | `action`, `status` (HTTP ou nulo), `message`, `reason`, `until`, `scope`, `operationId`, `recovered` |
 | `reconciliation_run` | `runId`, `provider`, `status`, `dryRun`, `trigger`, `counts` (resumo sem a lista de detalhes), `error`. Ator: quem iniciou a execução (as correções de estado feitas por ela usam o ator `system:reconciliation`) |
+| `combination_created` | coluna `combination_id`; `details`: `name`, `rule`, `minCount`, `durationSeconds`, `alertIds`, `automations` (quantidade) |
+| `combination_updated` | `changes`: `{campo: {from, to}}`, incluindo `alertIds` |
+| `combination_archived` | `archived` (booleano) |
+| `combination_state_changed` | `from`, `to` (`ok`/`pending`/`alert`), `alerting` (ids dos componentes), `rule`, `minCount`, `durationSeconds`. Ator `system:combination` |
+| `combination_automation_created` | `automationId`, `name`, `mode`, `url`, `triggerStates` |
+| `combination_automation_updated` | `automationId`, `changes` (de `headers`, só os nomes) |
+| `combination_automation_run` | `automationId`, `name`, `state`, `status`, `httpStatus`, `durationMs`, `error`. Ator `system:combination` |

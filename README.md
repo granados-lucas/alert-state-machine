@@ -46,6 +46,7 @@ pnpm check        # lint, tipos, regras, testes com cobertura, testes do simulad
 | Jornadas (detalhe, criar, editar) | `/journeys/[id]`, `/journeys/new`, `/journeys/[id]/edit` |
 | Alertas, filtros e detalhe com remediações, execuções e auditoria | `/alerts`, `/alerts/[id]` |
 | Criar alerta com remediação opcional | `/alerts/new` |
+| Combinações de alertas (regra E, OU ou pelo menos N, com duração; estado próprio e automação; não altera o mapa de jornadas) | `/combinations`, `/combinations/[id]`, `/combinations/new`; `/api/combinations` ([guia](docs/guia-de-uso.md#10-combinações-de-alertas-sinais-combinados)) |
 | Máquina de estados e equivalência de estados de cada fonte | `/graph` |
 | Documentação e manual de uso dentro da aplicação (Markdown do repositório, gerado no build) | `/docs`, `/docs/manual`, `/docs/datadog`, `/docs/cloudwatch`, `/docs/appdynamics`… |
 | Saúde da própria aplicação | `/status`; `GET /api/metrics` (Prometheus), `GET /api/health`, `GET /api/health/live` ([detalhes](docs/observability.md)) |
@@ -84,3 +85,13 @@ Códigos de saída (uma execução): `0` concluída, `1` falhou, `2` uso incorre
 - **cron:** `*/5 * * * * node /opt/app/scripts/reconcile.mjs --url http://app:3000`.
 - **Kubernetes:** um `CronJob` (`schedule: "*/5 * * * *"`, `concurrencyPolicy: Forbid`) com a imagem `node:24-alpine` e o script montado de um ConfigMap, comando `node /job/reconcile.mjs --url http://app:3000`.
 - O script se identifica no cabeçalho de identidade (`--identity`, padrão `reconciler@job`); em produção rode-o **dentro da rede**, sem passar pelo SSO.
+
+## Avaliador de combinações
+
+As combinações com duração ("os 2 alertando por 2 minutos") precisam de um relógio. O `docker compose up` já sobe o serviço `combination-evaluator`, que roda `scripts/evaluate-combinations.mjs` e chama `POST /api/combinations/evaluate` a cada 30 s (`EVALUATE_EVERY`). Sem o Docker:
+
+```bash
+node scripts/evaluate-combinations.mjs --url http://localhost:3000 --every 30
+```
+
+Sem `--every` roda uma vez. Se ele parar, as combinações com duração ficam em "Armando"; a tela `/status` e a métrica `global_alerts_combination_evaluator_last_run_timestamp_seconds` mostram isso.

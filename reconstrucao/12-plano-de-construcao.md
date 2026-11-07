@@ -57,7 +57,15 @@ Construa em fases curtas. Cada fase termina com um **critério de aceite** que p
 - Health, métricas, tela de status, logs com correlação (10).
 - **Aceite**: cenário 41; um coletor Prometheus lendo `/api/metrics` e os alertas sugeridos configurados.
 
-## Fase 9 — Endurecimento e entrada em produção
+## Fase 9 — Combinações de alertas
+
+- Regra e transição de estado em funções puras (02, seção 10), com a tabela de casos como teste.
+- Tabelas (04), avaliador com trava de linha, automações (reuso da execução de saída da remediação), cadastro com validações e auditoria.
+- Avaliação depois de cada evento que muda o estado de um alerta e processo periódico (~30 s) com heartbeat.
+- API (05), menu e telas (08), métricas e tela de status (10).
+- **Aceite**: cenários 42–52; o de concorrência (49) em PostgreSQL de verdade; e o fim a fim com dois alertas reais de teste (um comportamental e um de métrica).
+
+## Fase 10 — Endurecimento e entrada em produção
 
 - Revisão de segurança: SSO na frente e porta fechada ao resto; webhook fora do SSO com segredo forte; `/api/metrics` só para o coletor; firewall de saída com a lista de 09; nenhum segredo no repositório, imagens ou logs.
 - Política de **retenção** das tabelas de histórico (04) e backups.
