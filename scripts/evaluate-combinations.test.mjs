@@ -62,3 +62,10 @@ test("modo periódico continua depois de uma falha de rede e para em maxRuns", a
   assert.match(lines.join("\n"), /não consegui falar com/);
   assert.match(lines.join("\n"), /avaliadas 2/);
 });
+
+test("avisa no log quando alguma combinação falhou na avaliação", async () => {
+  const { log, lines } = quiet();
+  const { fetchImpl } = scripted([json({ evaluated: 3, changed: 0, failed: 2 })]);
+  assert.equal(await main(["--url", "http://app.test"], {}, { fetchImpl, log }), EXIT.ok);
+  assert.match(lines.join("\n"), /avaliadas 3, mudaram 0, FALHARAM 2/);
+});

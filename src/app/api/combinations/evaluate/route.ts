@@ -9,10 +9,10 @@ export const dynamic = "force-dynamic";
 export async function POST() {
   try {
     const db = database();
-    const { evaluated, changed, pending } = await evaluateCombinations(db);
+    const { evaluated, changed, failed, pending } = await evaluateCombinations(db);
     await recordEvaluatorRun(db);
     runAutomationsAfterResponse(db, pending);
-    return json({ evaluated, changed });
+    return json({ evaluated, changed, failed });
   } catch (error) {
     return errorResponse(error);
   }

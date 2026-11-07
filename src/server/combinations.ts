@@ -116,7 +116,11 @@ export async function updateCombination(db: Db, id: number, patch: UpdateCombina
       alertIds: alertIds ?? currentIds,
     });
     if (problem) throw new ValidationError(problem);
-    if (alertIds) await assertAlertsUsable(tx, alertIds);
+    // Só os alertas novos precisam estar ativos: uma combinação com componente arquivado continua editável.
+    if (alertIds) {
+      const added = alertIds.filter((alertId) => !currentIds.includes(alertId));
+      if (added.length > 0) await assertAlertsUsable(tx, added);
+    }
     if (scalars.name && scalars.name !== current.name) {
       const [clash] = await tx.select({ id: combinations.id }).from(combinations).where(and(eq(combinations.name, scalars.name), ne(combinations.id, id)));
       if (clash) throw new ConflictError("a combination with this name already exists");
@@ -136,6 +140,9 @@ export async function updateCombination(db: Db, id: number, patch: UpdateCombina
     if (idsChanged) changes.alertIds = { from: currentIds, to: nextIds };
     const archiveChanged = archived !== undefined && archived !== (current.archivedAt !== null);
     if (archiveChanged) set.archivedAt = archived ? new Date() : null;
+    // Arquivar encerra o ciclo: sem isso, restaurar depois reavaliaria um incidente antigo e dispararia a automação "ok" à toa.
+    const resetFrom = archiveChanged && archived && current.state !== "ok" ? current.state : null;
+    if (resetFrom) Object.assign(set, { state: "ok", satisfiedSince: null, stateChangedAt: new Date() });
     if (Object.keys(set).length === 0 && !idsChanged) return false;
 
     await tx.update(combinations).set({ ...set, updatedAt: new Date() }).where(eq(combinations.id, id));
@@ -147,7 +154,7 @@ export async function updateCombination(db: Db, id: number, patch: UpdateCombina
       await tx.insert(auditLog).values({ kind: "combination_updated", actor, combinationId: id, details: { changes } });
     }
     if (archiveChanged) {
-      await tx.insert(auditLog).values({ kind: "combination_archived", actor, combinationId: id, details: { archived: Boolean(archived) } });
+      await tx.insert(auditLog).values({ kind: "combination_archived", actor, combinationId: id, details: { archived: Boolean(archived), ...(resetFrom ? { resetFrom } : {}) } });
     }
     return true;
   });

@@ -5,7 +5,8 @@ import { increment } from "@/lib/metrics";
 import { findTriggeredAutomations, type PendingAutomation } from "./combination-automations";
 import type { Db, Tx } from "./db-types";
 
-export type EvaluateResult = { evaluated: number; changed: number; pending: PendingAutomation[] };
+/** `failed`: combinações cuja avaliação falhou (foram desfeitas e serão tentadas no próximo ciclo). */
+export type EvaluateResult = { evaluated: number; changed: number; failed: number; pending: PendingAutomation[] };
 type EvaluateOptions = { alertId?: number; combinationIds?: number[]; now?: Date };
 
 /**
@@ -29,9 +30,17 @@ export async function evaluateCombinations(db: Db, options: EvaluateOptions = {}
   }
   const rows = await db.select({ id: combinations.id }).from(combinations).where(and(...conditions)).orderBy(combinations.id);
 
-  const result: EvaluateResult = { evaluated: 0, changed: 0, pending: [] };
+  const result: EvaluateResult = { evaluated: 0, changed: 0, failed: 0, pending: [] };
   for (const { id } of rows) {
-    const outcome = await db.transaction((tx) => evaluateOne(tx, id, now));
+    // Uma combinação que falha não pode descartar as automações das que já commitaram (elas não seriam reavaliadas).
+    let outcome: Awaited<ReturnType<typeof evaluateOne>>;
+    try {
+      outcome = await db.transaction((tx) => evaluateOne(tx, id, now));
+    } catch {
+      result.failed += 1;
+      increment("combination_evaluation_errors_total");
+      continue;
+    }
     if (!outcome) continue;
     result.evaluated += 1;
     if (outcome.to) {

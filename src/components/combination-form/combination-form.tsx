@@ -173,7 +173,7 @@ export function CombinationForm({ combination }: Props) {
             </Field>
           )}
           <Field label="Por quantos minutos seguidos" hint="0 = dispara assim que a regra valer. Se a regra deixar de valer antes do tempo, a contagem recomeça.">
-            <input type="number" min={0} max={1440} className={field} value={values.minutes} onChange={(e) => set("minutes", e.target.value)} />
+            <input type="number" min={0} max={1440} step="any" className={field} value={values.minutes} onChange={(e) => set("minutes", e.target.value)} />
           </Field>
           <p className="text-xs text-muted">Só o estado Alerta conta; aviso, sem dados, normal, silenciados e arquivados não contam.</p>
         </Group>

@@ -55,7 +55,7 @@ export async function runOnce(config, { fetchImpl = fetch, log = console.log } =
     log(`erro: a aplicação respondeu ${response.status}: ${body.error ?? JSON.stringify(body)}`);
     return EXIT.failed;
   }
-  log(`avaliadas ${body.evaluated ?? 0}, mudaram ${body.changed ?? 0}`);
+  log(`avaliadas ${body.evaluated ?? 0}, mudaram ${body.changed ?? 0}${body.failed ? `, FALHARAM ${body.failed}` : ""}`);
   return EXIT.ok;
 }
 

@@ -150,6 +150,37 @@ describe("updateCombination", () => {
     await expect(updateCombination(db, 999_999, { name: "x" }, "ana")).rejects.toBeInstanceOf(NotFoundError);
   });
 
+  it("com um alerta componente arquivado a combinação continua editável; só alertas novos são validados", async () => {
+    const { combination, ids } = await make({ rule: "or" }, ["ok", "ok"]);
+    await db.update(alerts).set({ archivedAt: new Date() }).where(eq(alerts.id, ids[1]));
+    const { combination: updated } = await updateCombination(db, combination.id, { description: "só a descrição", alertIds: ids }, "ana");
+    expect(updated.description).toBe("só a descrição");
+    expect(await links(combination.id)).toEqual(ids);
+    const archivedNew = await newAlert("ok", { archivedAt: new Date() });
+    await expect(updateCombination(db, combination.id, { alertIds: [...ids, archivedNew] }, "ana")).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("arquivar uma combinação em alert a volta ao normal sem disparar; restaurar só dispara se a regra valer de novo", async () => {
+    const { combination, ids } = await make({ rule: "or", automations: [{ name: "a", mode: "webhook", url: "http://hooks.test/x", triggerStates: ["alert", "ok"] }] }, ["alert"]);
+    expect(combination.state).toBe("alert");
+    const archived = await updateCombination(db, combination.id, { archived: true }, "ana");
+    expect(archived.combination).toMatchObject({ state: "ok", satisfiedSince: null });
+    expect(archived.pending).toEqual([]);
+    const [entry] = await audit(combination.id, "combination_archived");
+    expect(entry.details).toMatchObject({ archived: true, resetFrom: "alert" });
+
+    await db.update(alerts).set({ state: "ok" }).where(eq(alerts.id, ids[0]));
+    const quiet = await updateCombination(db, combination.id, { archived: false }, "ana");
+    expect(quiet.combination.state).toBe("ok");
+    expect(quiet.pending).toEqual([]);
+
+    await updateCombination(db, combination.id, { archived: true }, "ana");
+    await db.update(alerts).set({ state: "alert" }).where(eq(alerts.id, ids[0]));
+    const incident = await updateCombination(db, combination.id, { archived: false }, "ana");
+    expect(incident.combination.state).toBe("alert");
+    expect(incident.pending).toHaveLength(1);
+  });
+
   it("arquivar tira da listagem, audita e mantém a leitura por id", async () => {
     const { combination } = await make();
     await updateCombination(db, combination.id, { archived: true }, "ana");
