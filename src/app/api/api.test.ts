@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { alerts, combinationAutomationRuns, muteOperations, remediationRuns } from "@/db/schema";
+import { alerts, combinationAutomationRuns, combinationEvaluatorHeartbeat, combinations, muteOperations, remediationRuns } from "@/db/schema";
 import { createTestDb } from "@/test/db";
 import { createCombination, createCombinationSchema } from "@/server/combinations";
 import type { Db } from "@/server/db-types";
@@ -32,6 +32,11 @@ const reconciliationRunRoute = await import("./reconciliation/[id]/route");
 const journeysRoute = await import("./journeys/route");
 const journeyRoute = await import("./journeys/[id]/route");
 const journeyAppsRoute = await import("./journeys/[id]/applications/route");
+const combinationsRoute = await import("./combinations/route");
+const combinationRoute = await import("./combinations/[id]/route");
+const automationsRoute = await import("./combinations/[id]/automations/route");
+const automationRoute = await import("./combinations/[id]/automations/[automationId]/route");
+const evaluateRoute = await import("./combinations/evaluate/route");
 
 beforeAll(async () => {
   ({ db, close } = await createTestDb());
@@ -531,3 +536,113 @@ describe("reconciliação", () => {
   });
 });
 
+describe("combinações", () => {
+  const patch = (body: unknown) => ({ method: "PATCH", headers: admin, body: JSON.stringify(body) });
+  const sendAlert = async (monitor: string, over: Record<string, unknown> = {}) =>
+    (await (await sendWebhook(dd({ monitor_id: monitor, tags: "service:combos-api", ...over }))).json()).alertId as number;
+  const create = (body: unknown) => combinationsRoute.POST(req("/api/combinations", post(body)));
+  let name = 0;
+
+  it("cria (201), lê com os componentes e lista", async () => {
+    const a = await sendAlert("940", { transition: "Recovered", alert_type: "success" });
+    const b = await sendAlert("941", { transition: "Recovered", alert_type: "success" });
+    const res = await create({ name: `api-${++name}`, rule: "and", alertIds: [a, b], durationSeconds: 120 });
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created).toMatchObject({ rule: "and", durationSeconds: 120, state: "ok" });
+    const read = await (await combinationRoute.GET(req("/x"), ctx({ id: String(created.id) }))).json();
+    expect(read.components.map((c: { id: number }) => c.id)).toEqual([a, b]);
+    expect(read.automations).toEqual([]);
+    const list = await (await combinationsRoute.GET(req("/api/combinations"))).json();
+    expect(list.items.map((c: { id: number }) => c.id)).toContain(created.id);
+  });
+
+  it("valida: nome repetido 409, at_least sem N 400, alerta inexistente 400, id ruim 400, inexistente 404", async () => {
+    const a = await sendAlert("942");
+    const body = { name: `api-${++name}`, rule: "or", alertIds: [a] };
+    expect((await create(body)).status).toBe(201);
+    expect((await create(body)).status).toBe(409);
+    expect((await create({ ...body, name: "x1", rule: "at_least" })).status).toBe(400);
+    expect((await create({ ...body, name: "x2", alertIds: [999_999] })).status).toBe(400);
+    expect((await combinationRoute.GET(req("/x"), ctx({ id: "abc" }))).status).toBe(400);
+    expect((await combinationRoute.GET(req("/x"), ctx({ id: "999999" }))).status).toBe(404);
+    expect((await combinationRoute.PATCH(req("/x", patch({ name: "y" })), ctx({ id: "999999" }))).status).toBe(404);
+  });
+
+  it("PATCH reavalia: tirar a duração leva a combinação de pending para alert; corpo vazio é 400", async () => {
+    const a = await sendAlert("943");
+    const created = await (await create({ name: `api-${++name}`, rule: "and", alertIds: [a], durationSeconds: 600 })).json();
+    expect(created.state).toBe("pending");
+    expect((await combinationRoute.PATCH(req("/x", patch({})), ctx({ id: String(created.id) }))).status).toBe(400);
+    const res = await combinationRoute.PATCH(req("/x", patch({ durationSeconds: 0 })), ctx({ id: String(created.id) }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: created.id, state: "alert", durationSeconds: 0 });
+  });
+
+  it("DELETE arquiva: some da lista e continua legível", async () => {
+    const a = await sendAlert("944");
+    const created = await (await create({ name: `api-${++name}`, rule: "or", alertIds: [a] })).json();
+    const res = await combinationRoute.DELETE(req("/x", { method: "DELETE", headers: admin }), ctx({ id: String(created.id) }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ archivedAt: expect.any(String) });
+    const list = await (await combinationsRoute.GET(req("/api/combinations"))).json();
+    expect(list.items.map((c: { id: number }) => c.id)).not.toContain(created.id);
+    expect((await combinationRoute.GET(req("/x"), ctx({ id: String(created.id) }))).status).toBe(200);
+  });
+
+  it("automações: cria (201), rejeita cabeçalho secreto literal, edita a URL e desativa", async () => {
+    const a = await sendAlert("945");
+    const one = await (await create({ name: `api-${++name}`, rule: "or", alertIds: [a], durationSeconds: 900 })).json();
+    const other = await (await create({ name: `api-${++name}`, rule: "or", alertIds: [a], durationSeconds: 900 })).json();
+    const c = ctx({ id: String(one.id) });
+    const bad = await automationsRoute.POST(req("/x", post({ name: "r", mode: "api", url: "http://hooks.test/r", headers: { Authorization: "literal" } })), c);
+    expect(bad.status).toBe(400);
+    const ok = await automationsRoute.POST(req("/x", post({ name: "r", mode: "webhook", url: "http://hooks.test/r", triggerStates: ["alert", "ok"] })), c);
+    expect(ok.status).toBe(201);
+    const automation = await ok.json();
+    expect((await automationsRoute.POST(req("/x", post({})), c)).status).toBe(400);
+    expect((await automationsRoute.POST(req("/x", post({ name: "r", mode: "webhook", url: "http://hooks.test/r" })), ctx({ id: "999999" }))).status).toBe(404);
+
+    const target = ctx({ id: String(one.id), automationId: String(automation.id) });
+    const edited = await automationRoute.PATCH(req("/x", patch({ url: "http://hooks.test/novo", enabled: false })), target);
+    expect(edited.status).toBe(200);
+    expect(await edited.json()).toMatchObject({ url: "http://hooks.test/novo", enabled: false });
+    expect((await automationRoute.PATCH(req("/x", patch({})), target)).status).toBe(400);
+    expect((await automationRoute.PATCH(req("/x", patch({ enabled: true })), ctx({ id: String(other.id), automationId: String(automation.id) }))).status).toBe(404);
+    expect((await automationRoute.PATCH(req("/x", patch({ enabled: true })), ctx({ id: "x", automationId: "1" }))).status).toBe(400);
+  });
+
+  it("uma automação desativada não é chamada quando a combinação dispara", async () => {
+    const a = await sendAlert("946", { transition: "Recovered", alert_type: "success" });
+    const made = await (await create({ name: `api-${++name}`, rule: "or", alertIds: [a] })).json();
+    const c = ctx({ id: String(made.id) });
+    const automation = await (await automationsRoute.POST(req("/x", post({ name: "r", mode: "webhook", url: "http://hooks.test/off" })), c)).json();
+    await automationRoute.PATCH(req("/x", patch({ enabled: false })), ctx({ id: String(made.id), automationId: String(automation.id) }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await sendWebhook(dd({ monitor_id: "946", tags: "service:combos-api" }));
+    expect((await (await combinationRoute.GET(req("/x"), c)).json()).state).toBe("alert");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("POST /evaluate completa a duração, executa a automação e grava o heartbeat", async () => {
+    const a = await sendAlert("947");
+    const made = await (await create({ name: `api-${++name}`, rule: "or", alertIds: [a], durationSeconds: 60 })).json();
+    expect(made.state).toBe("pending");
+    const c = ctx({ id: String(made.id) });
+    await automationsRoute.POST(req("/x", post({ name: "r", mode: "webhook", url: "http://hooks.test/tick" })), c);
+    await db.update(combinations).set({ satisfiedSince: new Date(Date.now() - 120_000) }).where(eq(combinations.id, made.id));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const res = await evaluateRoute.POST();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ changed: expect.any(Number) });
+    expect((await (await combinationRoute.GET(req("/x"), c)).json()).state).toBe("alert");
+    await vi.waitFor(async () => {
+      expect(await db.select().from(combinationAutomationRuns).where(eq(combinationAutomationRuns.combinationId, made.id))).toHaveLength(1);
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(await db.select().from(combinationEvaluatorHeartbeat)).toHaveLength(1);
+  });
+});
