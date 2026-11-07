@@ -11,6 +11,7 @@ const DEFINITIONS = {
   webhook_requests_total: { kind: "counter", help: "Webhooks recebidos, por fonte e resultado." },
   webhook_duration_seconds: { kind: "histogram", help: "Tempo de processamento do webhook, por fonte." },
   remediation_runs_total: { kind: "counter", help: "Execuções de remediação, por resultado." },
+  combination_transitions_total: { kind: "counter", help: "Mudanças de estado das combinações, por novo estado." },
   combination_automation_runs_total: { kind: "counter", help: "Execuções de automação de combinação, por resultado." },
   mute_operations_total: { kind: "counter", help: "Operações de silenciar/reativar, por ação e resultado." },
   provider_api_requests_total: { kind: "counter", help: "Chamadas à API da fonte, por operação e resultado." },
